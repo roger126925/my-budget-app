@@ -128,7 +128,7 @@ export default function Budget({ session }) {
   const [showAccountManager, setShowAccountManager] = useState(false)
   const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], is_shared: false })
   const [editAccountId, setEditAccountId] = useState(null)
-  const [editAccountForm, setEditAccountForm] = useState({ name: '', color: COLORS[0] })
+  const [editAccountForm, setEditAccountForm] = useState({ name: '', color: COLORS[0], is_shared: false })
 
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [newCategoryForm, setNewCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
@@ -383,6 +383,8 @@ export default function Budget({ session }) {
     const { error } = await supabase.from('accounts').update({
       name: editAccountForm.name,
       color: editAccountForm.color,
+      user_id: editAccountForm.is_shared ? null : session.user.id,
+      household_id: editAccountForm.is_shared ? household?.id : null,
     }).eq('id', editAccountId)
     if (error) { setMessage(error.message); return }
     setEditAccountId(null)
@@ -398,7 +400,7 @@ export default function Budget({ session }) {
 
   function startEditAccount(account) {
     setEditAccountId(account.id)
-    setEditAccountForm({ name: account.name, color: account.color })
+    setEditAccountForm({ name: account.name, color: account.color, is_shared: !!account.household_id })
   }
 
   function exportCSV() {
@@ -590,6 +592,13 @@ export default function Budget({ session }) {
                         style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: editAccountForm.color === c ? '3px solid #333' : '3px solid transparent' }} />
                     ))}
                   </div>
+                  {household && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
+                      <input type='checkbox' checked={editAccountForm.is_shared}
+                        onChange={e => setEditAccountForm({ ...editAccountForm, is_shared: e.target.checked })} />
+                      設為共同帳戶
+                    </label>
+                  )}
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button onClick={handleUpdateAccount}
                       style={{ flex: 1, padding: '0.4rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>儲存</button>
@@ -628,12 +637,16 @@ export default function Budget({ session }) {
                     style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: newAccountForm.color === c ? '3px solid #333' : '3px solid transparent' }} />
                 ))}
               </div>
-              {household && (
+              {household ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
                   <input type='checkbox' checked={newAccountForm.is_shared}
                     onChange={e => setNewAccountForm({ ...newAccountForm, is_shared: e.target.checked })} />
                   設為共同帳戶（雙方皆可記帳）
                 </label>
+              ) : (
+                <div style={{ fontSize: '0.82rem', color: '#aaa', padding: '0.4rem 0.6rem', background: '#f5f5f5', borderRadius: '6px', marginBottom: '0.5rem' }}>
+                  💡 先在上方「共同帳戶設定」建立或加入群組，即可將帳戶設為共同帳戶
+                </div>
               )}
               <button onClick={handleCreateAccount}
                 style={{ width: '100%', padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
