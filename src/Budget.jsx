@@ -212,7 +212,7 @@ export default function Budget({ session }) {
       setMessage('更新成功！')
       cancelEdit()
     } else {
-      const { error } = await supabase.from('transactions').insert([{ ...form, amount }])
+      const { error } = await supabase.from('transactions').insert([{ ...form, amount, user_id: session.user.id }])
       if (error) { setMessage(error.message); setLoading(false); return }
 
       const account = accounts.find(a => a.id === form.account_id)

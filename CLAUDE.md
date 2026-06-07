@@ -50,9 +50,24 @@ src/
 
 ## 待開發功能
 
+### 🔴 高優先（要加第二個人之前必須先做）
+- [ ] `accounts` 加 `user_id` + 開啟 RLS — 防止不同用戶看到彼此私人帳戶
+- [ ] `transactions` 加 `user_id` + 開啟 RLS — 防止不同用戶看到彼此交易
+- [ ] `categories` 保持全域共用（不隔離）
+- [ ] 前端新增資料時帶入 `user_id`
 
-### 低優先
-- [ ] 記住帳號及密碼
+### 🟡 中優先（RLS 完成後再做）
+- [ ] 新增 `households` 表（id, name, invite_code）
+- [ ] 新增 `household_members` 表（household_id, user_id）
+- [ ] `accounts` 加 `household_id`（共同帳戶綁定 household）
+- [ ] 共同帳戶 RLS — household 成員都看得到
+- [ ] 前端：建立 household / 用邀請碼加入
+- [ ] 前端：共同帳戶顯示預算、已花、剩餘金額
+
+### 🟢 低優先（共同帳戶完成後再做）
+- [ ] 共同帳戶交易標記「誰付的」
+- [ ] 自動計算每人應付金額與差額
+- [ ] 記住帳號及密碼（Supabase 預設已有 session 持久化，需確認是否真的需要）
 
 ## 部署
 
