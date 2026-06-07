@@ -150,6 +150,8 @@ export default function Budget({ session }) {
     start_month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
     note: '',
   })
+  const [isInstallment, setIsInstallment] = useState(false)
+  const [installmentMonths, setInstallmentMonths] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -266,6 +268,8 @@ export default function Budget({ session }) {
   function cancelEdit() {
     setEditId(null)
     setForm({ account_id: '', category_id: '', amount: '', type: 'expense', note: '', txn_date: now.toISOString().split('T')[0] })
+    setIsInstallment(false)
+    setInstallmentMonths('')
   }
 
   async function handleSubmit() {
@@ -274,6 +278,34 @@ export default function Budget({ session }) {
     }
     setLoading(true)
     const amount = parseFloat(form.amount)
+
+    const selectedAcc = accounts.find(a => a.id === form.account_id)
+    if (isInstallment && selectedAcc?.account_type === 'credit' && !editId) {
+      const months = parseInt(installmentMonths)
+      if (!months || months < 2) { setMessage('請輸入有效期數（至少 2 期）'); setLoading(false); return }
+      const monthly = Math.round(amount / months * 100) / 100
+      const startMonth = form.txn_date.substring(0, 7)
+      const instName = form.note || categories.find(c => c.id === form.category_id)?.name || '分期購買'
+      const { error } = await supabase.from('installments').insert([{
+        user_id: session.user.id,
+        account_id: form.account_id,
+        category_id: form.category_id || null,
+        name: instName,
+        total_amount: amount,
+        monthly_amount: monthly,
+        total_months: months,
+        start_month: startMonth,
+        note: '',
+      }])
+      if (error) { setMessage(error.message); setLoading(false); return }
+      setMessage(`分期已建立！每月 $${monthly.toLocaleString()}，共 ${months} 期`)
+      setForm({ ...form, amount: '', note: '' })
+      setIsInstallment(false)
+      setInstallmentMonths('')
+      fetchInstallments()
+      setLoading(false)
+      return
+    }
 
     if (editId) {
       const original = transactions.find(t => t.id === editId)
@@ -1122,23 +1154,46 @@ export default function Budget({ session }) {
             <button style={btn(form.type === 'income', '#1D9E75')} onClick={() => setForm({ ...form, type: 'income' })}>收入</button>
           </div>
           <div className="form-col">
-            <select value={form.account_id} onChange={e => setForm({ ...form, account_id: e.target.value })}>
+            <select value={form.account_id} onChange={e => { setForm({ ...form, account_id: e.target.value }); setIsInstallment(false); setInstallmentMonths('') }}>
               <option value=''>選擇帳戶</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
+            {form.account_id && accounts.find(a => a.id === form.account_id)?.account_type === 'credit' && !editId && (
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button type='button' onClick={() => setIsInstallment(false)}
+                  style={{ flex: 1, padding: '0.4rem', background: !isInstallment ? '#534AB7' : '#eee', color: !isInstallment ? '#fff' : '#555', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: isInstallment ? 400 : 600 }}>
+                  單筆
+                </button>
+                <button type='button' onClick={() => setIsInstallment(true)}
+                  style={{ flex: 1, padding: '0.4rem', background: isInstallment ? '#D85A30' : '#eee', color: isInstallment ? '#fff' : '#555', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: isInstallment ? 600 : 400 }}>
+                  分期
+                </button>
+              </div>
+            )}
             <select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })}>
               <option value=''>選擇分類</option>
               {(form.type === 'expense' ? expenseCategories : incomeCategories).map(c =>
                 <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
               )}
             </select>
-            <input type='number' placeholder='金額' value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
-            <input type='text' placeholder='備註（選填）' value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
+            <input type='number' placeholder={isInstallment ? '總金額' : '金額'} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+            {isInstallment && (
+              <>
+                <input type='number' placeholder='期數（例：12）' min={2} value={installmentMonths}
+                  onChange={e => setInstallmentMonths(e.target.value)} />
+                {form.amount && installmentMonths && parseInt(installmentMonths) >= 2 && (
+                  <div style={{ fontSize: '0.88rem', color: '#534AB7', padding: '0.35rem 0.75rem', background: '#f0eeff', borderRadius: '8px' }}>
+                    每月 ${(Math.round(parseFloat(form.amount) / parseInt(installmentMonths) * 100) / 100).toLocaleString()}，共 {installmentMonths} 期
+                  </div>
+                )}
+              </>
+            )}
+            <input type='text' placeholder={isInstallment ? '名稱（選填，預設用分類名）' : '備註（選填）'} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
             <input type='date' value={form.txn_date} onChange={e => setForm({ ...form, txn_date: e.target.value })} />
             <div className="btn-row">
               <button disabled={loading} onClick={handleSubmit}
-                style={{ flex: 1, padding: '0.75rem', fontSize: '1rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
-                {loading ? '處理中...' : editId ? '更新' : '新增'}
+                style={{ flex: 1, padding: '0.75rem', fontSize: '1rem', background: isInstallment ? '#D85A30' : '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
+                {loading ? '處理中...' : editId ? '更新' : isInstallment ? '建立分期' : '新增'}
               </button>
               {editId && (
                 <button onClick={cancelEdit}
