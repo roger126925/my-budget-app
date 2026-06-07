@@ -476,6 +476,47 @@ export default function Budget({ session }) {
         <h2 style={{ marginBottom: '0.25rem' }}>設定</h2>
         {message && <p style={{ color: message.includes('成功') ? 'green' : 'red', marginTop: '0.25rem' }}>{message}</p>}
 
+      {/* 預算設定 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowBudget(!showBudget)}>
+          {showBudget ? '▲ 收起預算設定' : '▼ 展開預算設定'}
+        </button>
+        {showBudget && (
+          <div className="budget-body">
+            {expenseCategories.map(c => {
+              const budget = parseFloat(budgetInputs[c.id]) || 0
+              const actual = actualByCategory[c.id] || 0
+              const pct = budget > 0 ? Math.min((actual / budget) * 100, 100) : 0
+              const over = budget > 0 && actual > budget
+              const barColor = over ? '#D85A30' : pct > 80 ? '#F5A623' : '#1D9E75'
+              return (
+                <div key={c.id} className="budget-row">
+                  <div className="budget-row-header">
+                    <span>{c.icon} {c.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span className="budget-actual">實際 ${actual.toLocaleString()} /</span>
+                      <input type='number' placeholder='預算' className="budget-input"
+                        value={budgetInputs[c.id] || ''}
+                        onChange={e => setBudgetInputs({ ...budgetInputs, [c.id]: e.target.value })}
+                        onBlur={() => saveBudget(c.id, budgetInputs[c.id])}
+                      />
+                    </div>
+                  </div>
+                  {budget > 0 && (
+                    <>
+                      <div className="progress-bg">
+                        <div className="progress-fill" style={{ width: `${pct}%`, background: barColor }} />
+                      </div>
+                      {over && <div className="budget-over">超出預算 ${(actual - budget).toLocaleString()}</div>}
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {/* 共同帳戶管理 */}
       <div className="budget-section">
         <button className="budget-toggle" onClick={() => setShowHousehold(!showHousehold)}>
@@ -820,47 +861,6 @@ export default function Budget({ session }) {
 
       {/* 圓餅圖 */}
       <PieChart transactions={transactions} />
-
-      {/* 預算設定 */}
-      <div className="budget-section">
-        <button className="budget-toggle" onClick={() => setShowBudget(!showBudget)}>
-          {showBudget ? '▲ 收起預算設定' : '▼ 展開預算設定'}
-        </button>
-        {showBudget && (
-          <div className="budget-body">
-            {expenseCategories.map(c => {
-              const budget = parseFloat(budgetInputs[c.id]) || 0
-              const actual = actualByCategory[c.id] || 0
-              const pct = budget > 0 ? Math.min((actual / budget) * 100, 100) : 0
-              const over = budget > 0 && actual > budget
-              const barColor = over ? '#D85A30' : pct > 80 ? '#F5A623' : '#1D9E75'
-              return (
-                <div key={c.id} className="budget-row">
-                  <div className="budget-row-header">
-                    <span>{c.icon} {c.name}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <span className="budget-actual">實際 ${actual.toLocaleString()} /</span>
-                      <input type='number' placeholder='預算' className="budget-input"
-                        value={budgetInputs[c.id] || ''}
-                        onChange={e => setBudgetInputs({ ...budgetInputs, [c.id]: e.target.value })}
-                        onBlur={() => saveBudget(c.id, budgetInputs[c.id])}
-                      />
-                    </div>
-                  </div>
-                  {budget > 0 && (
-                    <>
-                      <div className="progress-bg">
-                        <div className="progress-fill" style={{ width: `${pct}%`, background: barColor }} />
-                      </div>
-                      {over && <div className="budget-over">超出預算 ${(actual - budget).toLocaleString()}</div>}
-                    </>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
 
       {/* 篩選 + 匯出 */}
       <div className="filter-row">
