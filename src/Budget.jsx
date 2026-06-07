@@ -126,9 +126,9 @@ export default function Budget({ session }) {
   const [householdBudgetInput, setHouseholdBudgetInput] = useState('')
 
   const [showAccountManager, setShowAccountManager] = useState(false)
-  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', is_shared: false })
+  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', billing_day: '', is_shared: false })
   const [editAccountId, setEditAccountId] = useState(null)
-  const [editAccountForm, setEditAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', is_shared: false })
+  const [editAccountForm, setEditAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', billing_day: '', is_shared: false })
 
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [newCategoryForm, setNewCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
@@ -284,7 +284,7 @@ export default function Budget({ session }) {
       const months = parseInt(installmentMonths)
       if (!months || months < 2) { setMessage('請輸入有效期數（至少 2 期）'); setLoading(false); return }
       const monthly = Math.round(amount / months * 100) / 100
-      const startMonth = form.txn_date.substring(0, 7)
+      const startMonth = calcStartMonth(form.txn_date, selectedAcc.billing_day)
       const instName = form.note || categories.find(c => c.id === form.category_id)?.name || '分期購買'
       const { error } = await supabase.from('installments').insert([{
         user_id: session.user.id,
@@ -298,7 +298,7 @@ export default function Budget({ session }) {
         note: '',
       }])
       if (error) { setMessage(error.message); setLoading(false); return }
-      setMessage(`分期已建立！每月 $${monthly.toLocaleString()}，共 ${months} 期`)
+      setMessage(`分期已建立！${startMonth} 起，每月 $${monthly.toLocaleString()}，共 ${months} 期`)
       setForm({ ...form, amount: '', note: '' })
       setIsInstallment(false)
       setInstallmentMonths('')
@@ -442,6 +442,7 @@ export default function Budget({ session }) {
       balance: parseFloat(newAccountForm.balance),
       color: newAccountForm.color,
       account_type: newAccountForm.account_type,
+      billing_day: newAccountForm.account_type === 'credit' && newAccountForm.billing_day ? parseInt(newAccountForm.billing_day) : null,
       user_id: newAccountForm.is_shared ? null : session.user.id,
       household_id: newAccountForm.is_shared ? household?.id : null,
     }])
@@ -456,6 +457,7 @@ export default function Budget({ session }) {
       balance: parseFloat(editAccountForm.balance) || 0,
       color: editAccountForm.color,
       account_type: editAccountForm.account_type,
+      billing_day: editAccountForm.account_type === 'credit' && editAccountForm.billing_day ? parseInt(editAccountForm.billing_day) : null,
       user_id: editAccountForm.is_shared ? null : session.user.id,
       household_id: editAccountForm.is_shared ? household?.id : null,
     }).eq('id', editAccountId)
@@ -473,7 +475,16 @@ export default function Budget({ session }) {
 
   function startEditAccount(account) {
     setEditAccountId(account.id)
-    setEditAccountForm({ name: account.name, balance: String(account.balance), color: account.color, account_type: account.account_type || 'general', is_shared: !!account.household_id })
+    setEditAccountForm({ name: account.name, balance: String(account.balance), color: account.color, account_type: account.account_type || 'general', billing_day: account.billing_day ? String(account.billing_day) : '', is_shared: !!account.household_id })
+  }
+
+  function calcStartMonth(txnDate, billingDay) {
+    const [year, month, day] = txnDate.split('-').map(Number)
+    if (!billingDay || day <= billingDay) {
+      return `${year}-${String(month).padStart(2, '0')}`
+    }
+    const next = new Date(year, month, 1) // month from split is 1-indexed → Date treats as next month
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
   }
 
   function getInstallmentProgress(inst) {
@@ -937,11 +948,17 @@ export default function Budget({ session }) {
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'general' })}
+                    <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'general', billing_day: '' })}
                       style={{ flex: 1, padding: '0.3rem', background: editAccountForm.account_type !== 'credit' ? '#534AB7' : '#eee', color: editAccountForm.account_type !== 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>一般帳戶</button>
                     <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'credit' })}
                       style={{ flex: 1, padding: '0.3rem', background: editAccountForm.account_type === 'credit' ? '#D85A30' : '#eee', color: editAccountForm.account_type === 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>信用卡</button>
                   </div>
+                  {editAccountForm.account_type === 'credit' && (
+                    <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
+                      value={editAccountForm.billing_day}
+                      onChange={e => setEditAccountForm({ ...editAccountForm, billing_day: e.target.value })}
+                      style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                  )}
                   {household && (
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
                       <input type='checkbox' checked={editAccountForm.is_shared}
@@ -988,11 +1005,17 @@ export default function Budget({ session }) {
                 ))}
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'general' })}
+                <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'general', billing_day: '' })}
                   style={{ flex: 1, padding: '0.3rem', background: newAccountForm.account_type !== 'credit' ? '#534AB7' : '#eee', color: newAccountForm.account_type !== 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>一般帳戶</button>
                 <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'credit' })}
                   style={{ flex: 1, padding: '0.3rem', background: newAccountForm.account_type === 'credit' ? '#D85A30' : '#eee', color: newAccountForm.account_type === 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>信用卡</button>
               </div>
+              {newAccountForm.account_type === 'credit' && (
+                <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
+                  value={newAccountForm.billing_day}
+                  onChange={e => setNewAccountForm({ ...newAccountForm, billing_day: e.target.value })}
+                  style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+              )}
               {household ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
                   <input type='checkbox' checked={newAccountForm.is_shared}
@@ -1181,11 +1204,17 @@ export default function Budget({ session }) {
               <>
                 <input type='number' placeholder='期數（例：12）' min={2} value={installmentMonths}
                   onChange={e => setInstallmentMonths(e.target.value)} />
-                {form.amount && installmentMonths && parseInt(installmentMonths) >= 2 && (
-                  <div style={{ fontSize: '0.88rem', color: '#534AB7', padding: '0.35rem 0.75rem', background: '#f0eeff', borderRadius: '8px' }}>
-                    每月 ${(Math.round(parseFloat(form.amount) / parseInt(installmentMonths) * 100) / 100).toLocaleString()}，共 {installmentMonths} 期
-                  </div>
-                )}
+                {form.amount && installmentMonths && parseInt(installmentMonths) >= 2 && (() => {
+                  const acc = accounts.find(a => a.id === form.account_id)
+                  const startM = calcStartMonth(form.txn_date, acc?.billing_day)
+                  const monthly = Math.round(parseFloat(form.amount) / parseInt(installmentMonths) * 100) / 100
+                  return (
+                    <div style={{ fontSize: '0.88rem', color: '#534AB7', padding: '0.35rem 0.75rem', background: '#f0eeff', borderRadius: '8px', lineHeight: 1.6 }}>
+                      每月 ${monthly.toLocaleString()}，共 {installmentMonths} 期<br />
+                      <span style={{ color: '#888' }}>首期出帳：{startM}{acc?.billing_day ? `（每月 ${acc.billing_day} 號出帳）` : ''}</span>
+                    </div>
+                  )
+                })()}
               </>
             )}
             <input type='text' placeholder={isInstallment ? '名稱（選填，預設用分類名）' : '備註（選填）'} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
