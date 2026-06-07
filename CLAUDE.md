@@ -30,9 +30,9 @@ src/
 
 | 表名 | 欄位 | 說明 |
 |------|------|------|
-| `accounts` | id, name, balance, color | 帳戶（現金、銀行等） |
-| `categories` | id, name, icon, type | 分類，type = `expense` / `income` |
-| `transactions` | id, account_id, category_id, amount, type, note, txn_date | 交易紀錄 |
+| `accounts` | id, user_id, name, balance, color | 帳戶，RLS 隔離（每人只看自己的） |
+| `categories` | id, name, icon, type | 分類，全域共用（不隔離） |
+| `transactions` | id, user_id, account_id, category_id, amount, type, note, txn_date | 交易紀錄，RLS 隔離 |
 | `budgets` | id, user_id, category_id, month, amount | 每月分類預算，unique(user_id, category_id, month) |
 
 ## 目前功能
@@ -50,11 +50,11 @@ src/
 
 ## 待開發功能
 
-### 🔴 高優先（要加第二個人之前必須先做）
-- [ ] `accounts` 加 `user_id` + 開啟 RLS — 防止不同用戶看到彼此私人帳戶
-- [ ] `transactions` 加 `user_id` + 開啟 RLS — 防止不同用戶看到彼此交易
-- [ ] `categories` 保持全域共用（不隔離）
-- [ ] 前端新增資料時帶入 `user_id`
+### 🔴 高優先（✅ 已完成）
+- [x] `accounts` 加 `user_id` + 開啟 RLS
+- [x] `transactions` 加 `user_id` + 開啟 RLS
+- [x] `categories` 保持全域共用
+- [x] 前端新增交易時帶入 `user_id`
 
 ### 🟡 中優先（RLS 完成後再做）
 - [ ] 新增 `households` 表（id, name, invite_code）

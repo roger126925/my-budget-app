@@ -119,6 +119,11 @@ export default function Budget({ session }) {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
 
+  const [showAccountManager, setShowAccountManager] = useState(false)
+  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0] })
+  const [editAccountId, setEditAccountId] = useState(null)
+  const [editAccountForm, setEditAccountForm] = useState({ name: '', color: COLORS[0] })
+
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -270,6 +275,43 @@ export default function Budget({ session }) {
     fetchBudgets()
   }
 
+  async function handleCreateAccount() {
+    if (!newAccountForm.name || newAccountForm.balance === '') {
+      setMessage('請填寫帳戶名稱和餘額'); return
+    }
+    const { error } = await supabase.from('accounts').insert([{
+      name: newAccountForm.name,
+      balance: parseFloat(newAccountForm.balance),
+      color: newAccountForm.color,
+      user_id: session.user.id,
+    }])
+    if (error) { setMessage(error.message); return }
+    setNewAccountForm({ name: '', balance: '', color: COLORS[0] })
+    fetchAccountsAndCategories()
+  }
+
+  async function handleUpdateAccount() {
+    const { error } = await supabase.from('accounts').update({
+      name: editAccountForm.name,
+      color: editAccountForm.color,
+    }).eq('id', editAccountId)
+    if (error) { setMessage(error.message); return }
+    setEditAccountId(null)
+    fetchAccountsAndCategories()
+  }
+
+  async function handleDeleteAccount(id) {
+    if (!confirm('確定刪除此帳戶？')) return
+    const { error } = await supabase.from('accounts').delete().eq('id', id)
+    if (error) { setMessage(error.message); return }
+    fetchAccountsAndCategories()
+  }
+
+  function startEditAccount(account) {
+    setEditAccountId(account.id)
+    setEditAccountForm({ name: account.name, color: account.color })
+  }
+
   function exportCSV() {
     const filtered = transactions.filter(t =>
       (!filterCategory || t.category_id === filterCategory) &&
@@ -318,6 +360,72 @@ export default function Budget({ session }) {
             <div className="account-card-balance" style={{ color: a.color }}>${parseFloat(a.balance).toLocaleString()}</div>
           </div>
         ))}
+      </div>
+
+      {/* 帳戶管理 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowAccountManager(!showAccountManager)}>
+          {showAccountManager ? '▲ 收起帳戶管理' : '▼ 帳戶管理'}
+        </button>
+        {showAccountManager && (
+          <div className="budget-body">
+            {accounts.map(a => (
+              editAccountId === a.id ? (
+                <div key={a.id} style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#f0f0f0', borderRadius: '8px' }}>
+                  <input type='text' value={editAccountForm.name}
+                    onChange={e => setEditAccountForm({ ...editAccountForm, name: e.target.value })}
+                    style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                  <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                    {COLORS.map(c => (
+                      <div key={c} onClick={() => setEditAccountForm({ ...editAccountForm, color: c })}
+                        style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: editAccountForm.color === c ? '3px solid #333' : '3px solid transparent' }} />
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button onClick={handleUpdateAccount}
+                      style={{ flex: 1, padding: '0.4rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>儲存</button>
+                    <button onClick={() => setEditAccountId(null)}
+                      style={{ padding: '0.4rem 0.8rem', background: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>取消</button>
+                  </div>
+                </div>
+              ) : (
+                <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid #eee' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: a.color, flexShrink: 0 }} />
+                    <span style={{ fontWeight: 500 }}>{a.name}</span>
+                    <span style={{ color: '#888', fontSize: '0.85rem' }}>${parseFloat(a.balance).toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.2rem' }}>
+                    <button onClick={() => startEditAccount(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✎</button>
+                    <button onClick={() => handleDeleteAccount(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✕</button>
+                  </div>
+                </div>
+              )
+            ))}
+
+            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
+              <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>新增帳戶</div>
+              <input type='text' placeholder='帳戶名稱（例：現金、玉山銀行）'
+                value={newAccountForm.name}
+                onChange={e => setNewAccountForm({ ...newAccountForm, name: e.target.value })}
+                style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+              <input type='number' placeholder='初始餘額'
+                value={newAccountForm.balance}
+                onChange={e => setNewAccountForm({ ...newAccountForm, balance: e.target.value })}
+                style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                {COLORS.map(c => (
+                  <div key={c} onClick={() => setNewAccountForm({ ...newAccountForm, color: c })}
+                    style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: newAccountForm.color === c ? '3px solid #333' : '3px solid transparent' }} />
+                ))}
+              </div>
+              <button onClick={handleCreateAccount}
+                style={{ width: '100%', padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
+                新增帳戶
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 記帳 / 轉帳 切換 */}

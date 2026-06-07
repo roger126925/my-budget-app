@@ -38,3 +38,14 @@
 
 ### 新增資料表
 - `budgets`：每月分類預算，欄位 id / user_id / category_id / month / amount，unique(user_id, category_id, month)，啟用 RLS
+
+---
+
+## 2026-06-07（多用戶隔離）
+
+### RLS 私人資料隔離
+- `accounts` 新增 `user_id` 欄位，開啟 RLS，Policy：`auth.uid() = user_id`
+- `transactions` 新增 `user_id` 欄位，開啟 RLS，Policy：`auth.uid() = user_id`
+- `categories` 維持全域共用，不加 RLS
+- 前端 `handleSubmit()` 新增交易時帶入 `user_id: session.user.id`
+- 現有資料透過 SQL UPDATE 補上 user_id，確保原有記錄不遺失
