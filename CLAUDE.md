@@ -54,6 +54,21 @@ src/
 ### 低優先
 - [ ] 記住帳號及密碼
 
+## 部署
+
+- 平台：Vercel（免費）
+- Repo：https://github.com/roger126925/my-budget-app.git
+- 環境變數在 Vercel Dashboard 設定：`VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`
+
+### 更新部署指令
+```
+cd "d:/Python/0. Finance/2. my-budget-app"
+git add .
+git commit -m "說明這次改了什麼"
+git push
+```
+git push 後 Vercel 會自動重新部署。
+
 ## 注意事項
 
 - Supabase 免費方案閒置一週會自動暫停，需至 supabase.com 手動點「Restore project」
