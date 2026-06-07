@@ -126,9 +126,9 @@ export default function Budget({ session }) {
   const [householdBudgetInput, setHouseholdBudgetInput] = useState('')
 
   const [showAccountManager, setShowAccountManager] = useState(false)
-  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], is_shared: false })
+  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', is_shared: false })
   const [editAccountId, setEditAccountId] = useState(null)
-  const [editAccountForm, setEditAccountForm] = useState({ name: '', balance: '', color: COLORS[0], is_shared: false })
+  const [editAccountForm, setEditAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', is_shared: false })
 
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [newCategoryForm, setNewCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
@@ -256,18 +256,20 @@ export default function Budget({ session }) {
 
       const oldAcc = accounts.find(a => a.id === original.account_id)
       if (oldAcc) {
-        const restored = original.type === 'expense'
-          ? parseFloat(oldAcc.balance) + parseFloat(original.amount)
-          : parseFloat(oldAcc.balance) - parseFloat(original.amount)
+        const isCredit = oldAcc.account_type === 'credit'
+        const restored = isCredit
+          ? (original.type === 'expense' ? parseFloat(oldAcc.balance) - parseFloat(original.amount) : parseFloat(oldAcc.balance) + parseFloat(original.amount))
+          : (original.type === 'expense' ? parseFloat(oldAcc.balance) + parseFloat(original.amount) : parseFloat(oldAcc.balance) - parseFloat(original.amount))
         await supabase.from('accounts').update({ balance: restored }).eq('id', original.account_id)
       }
 
       const { data: freshAccs } = await supabase.from('accounts').select('*')
       const newAcc = (freshAccs || []).find(a => a.id === form.account_id)
       if (newAcc) {
-        const newBal = form.type === 'expense'
-          ? parseFloat(newAcc.balance) - amount
-          : parseFloat(newAcc.balance) + amount
+        const isCredit = newAcc.account_type === 'credit'
+        const newBal = isCredit
+          ? (form.type === 'expense' ? parseFloat(newAcc.balance) + amount : parseFloat(newAcc.balance) - amount)
+          : (form.type === 'expense' ? parseFloat(newAcc.balance) - amount : parseFloat(newAcc.balance) + amount)
         await supabase.from('accounts').update({ balance: newBal }).eq('id', form.account_id)
       }
 
@@ -279,9 +281,10 @@ export default function Budget({ session }) {
 
       const account = accounts.find(a => a.id === form.account_id)
       if (account) {
-        const newBalance = form.type === 'expense'
-          ? parseFloat(account.balance) - amount
-          : parseFloat(account.balance) + amount
+        const isCredit = account.account_type === 'credit'
+        const newBalance = isCredit
+          ? (form.type === 'expense' ? parseFloat(account.balance) + amount : parseFloat(account.balance) - amount)
+          : (form.type === 'expense' ? parseFloat(account.balance) - amount : parseFloat(account.balance) + amount)
         await supabase.from('accounts').update({ balance: newBalance }).eq('id', form.account_id)
       }
       setMessage('新增成功！')
@@ -300,9 +303,10 @@ export default function Budget({ session }) {
 
     const account = accounts.find(a => a.id === txn.account_id)
     if (account) {
-      const newBalance = txn.type === 'expense'
-        ? parseFloat(account.balance) + parseFloat(txn.amount)
-        : parseFloat(account.balance) - parseFloat(txn.amount)
+      const isCredit = account.account_type === 'credit'
+      const newBalance = isCredit
+        ? (txn.type === 'expense' ? parseFloat(account.balance) - parseFloat(txn.amount) : parseFloat(account.balance) + parseFloat(txn.amount))
+        : (txn.type === 'expense' ? parseFloat(account.balance) + parseFloat(txn.amount) : parseFloat(account.balance) - parseFloat(txn.amount))
       await supabase.from('accounts').update({ balance: newBalance }).eq('id', txn.account_id)
     }
     fetchAll()
@@ -316,8 +320,11 @@ export default function Budget({ session }) {
     const amt = parseFloat(amount)
     const fromAcc = accounts.find(a => a.id === from_account_id)
     const toAcc = accounts.find(a => a.id === to_account_id)
+    const toNewBalance = toAcc.account_type === 'credit'
+      ? parseFloat(toAcc.balance) - amt
+      : parseFloat(toAcc.balance) + amt
     await supabase.from('accounts').update({ balance: parseFloat(fromAcc.balance) - amt }).eq('id', from_account_id)
-    await supabase.from('accounts').update({ balance: parseFloat(toAcc.balance) + amt }).eq('id', to_account_id)
+    await supabase.from('accounts').update({ balance: toNewBalance }).eq('id', to_account_id)
     setMessage('轉帳成功！')
     setTransferForm({ ...transferForm, amount: '', note: '' })
     fetchAll()
@@ -376,11 +383,12 @@ export default function Budget({ session }) {
       name: newAccountForm.name,
       balance: parseFloat(newAccountForm.balance),
       color: newAccountForm.color,
+      account_type: newAccountForm.account_type,
       user_id: newAccountForm.is_shared ? null : session.user.id,
       household_id: newAccountForm.is_shared ? household?.id : null,
     }])
     if (error) { setMessage(error.message); return }
-    setNewAccountForm({ name: '', balance: '', color: COLORS[0], is_shared: false })
+    setNewAccountForm({ name: '', balance: '', color: COLORS[0], account_type: 'general', is_shared: false })
     fetchAccountsAndCategories()
   }
 
@@ -389,6 +397,7 @@ export default function Budget({ session }) {
       name: editAccountForm.name,
       balance: parseFloat(editAccountForm.balance) || 0,
       color: editAccountForm.color,
+      account_type: editAccountForm.account_type,
       user_id: editAccountForm.is_shared ? null : session.user.id,
       household_id: editAccountForm.is_shared ? household?.id : null,
     }).eq('id', editAccountId)
@@ -406,7 +415,7 @@ export default function Budget({ session }) {
 
   function startEditAccount(account) {
     setEditAccountId(account.id)
-    setEditAccountForm({ name: account.name, balance: String(account.balance), color: account.color, is_shared: !!account.household_id })
+    setEditAccountForm({ name: account.name, balance: String(account.balance), color: account.color, account_type: account.account_type || 'general', is_shared: !!account.household_id })
   }
 
   async function fetchDataTransactions(month) {
@@ -427,9 +436,10 @@ export default function Budget({ session }) {
     if (error) { setMessage(error.message); return }
     const account = accounts.find(a => a.id === txn.account_id)
     if (account) {
-      const newBalance = txn.type === 'expense'
-        ? parseFloat(account.balance) + parseFloat(txn.amount)
-        : parseFloat(account.balance) - parseFloat(txn.amount)
+      const isCredit = account.account_type === 'credit'
+      const newBalance = isCredit
+        ? (txn.type === 'expense' ? parseFloat(account.balance) - parseFloat(txn.amount) : parseFloat(account.balance) + parseFloat(txn.amount))
+        : (txn.type === 'expense' ? parseFloat(account.balance) + parseFloat(txn.amount) : parseFloat(account.balance) - parseFloat(txn.amount))
       await supabase.from('accounts').update({ balance: newBalance }).eq('id', txn.account_id)
       fetchAccountsAndCategories()
     }
@@ -503,15 +513,21 @@ export default function Budget({ session }) {
         {/* 帳戶餘額 */}
         <h2>帳戶餘額</h2>
       <div className="account-cards">
-        {accounts.map(a => (
-          <div key={a.id} className="account-card" style={{ background: a.color + '22', border: `1.5px solid ${a.color}` }}>
-            <div className="account-card-label">
-              {a.name}
-              {a.household_id && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#534AB7', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>共</span>}
+        {accounts.map(a => {
+          const isCredit = a.account_type === 'credit'
+          const cardColor = isCredit ? '#D85A30' : a.color
+          return (
+            <div key={a.id} className="account-card" style={{ background: cardColor + '18', border: `1.5px solid ${cardColor}` }}>
+              <div className="account-card-label">
+                {a.name}
+                {isCredit && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#D85A30', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>卡</span>}
+                {a.household_id && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#534AB7', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>共</span>}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>{isCredit ? '待繳' : '餘額'}</div>
+              <div className="account-card-balance" style={{ color: cardColor }}>${parseFloat(a.balance).toLocaleString()}</div>
             </div>
-            <div className="account-card-balance" style={{ color: a.color }}>${parseFloat(a.balance).toLocaleString()}</div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       </>}
 
@@ -686,6 +702,12 @@ export default function Budget({ session }) {
                         style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: editAccountForm.color === c ? '3px solid #333' : '3px solid transparent' }} />
                     ))}
                   </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'general' })}
+                      style={{ flex: 1, padding: '0.3rem', background: editAccountForm.account_type !== 'credit' ? '#534AB7' : '#eee', color: editAccountForm.account_type !== 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>一般帳戶</button>
+                    <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'credit' })}
+                      style={{ flex: 1, padding: '0.3rem', background: editAccountForm.account_type === 'credit' ? '#D85A30' : '#eee', color: editAccountForm.account_type === 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>信用卡</button>
+                  </div>
                   {household && (
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
                       <input type='checkbox' checked={editAccountForm.is_shared}
@@ -730,6 +752,12 @@ export default function Budget({ session }) {
                   <div key={c} onClick={() => setNewAccountForm({ ...newAccountForm, color: c })}
                     style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: newAccountForm.color === c ? '3px solid #333' : '3px solid transparent' }} />
                 ))}
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'general' })}
+                  style={{ flex: 1, padding: '0.3rem', background: newAccountForm.account_type !== 'credit' ? '#534AB7' : '#eee', color: newAccountForm.account_type !== 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>一般帳戶</button>
+                <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'credit' })}
+                  style={{ flex: 1, padding: '0.3rem', background: newAccountForm.account_type === 'credit' ? '#D85A30' : '#eee', color: newAccountForm.account_type === 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>信用卡</button>
               </div>
               {household ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
