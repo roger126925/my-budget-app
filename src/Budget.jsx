@@ -143,13 +143,6 @@ export default function Budget({ session }) {
   const [dataTransactions, setDataTransactions] = useState([])
   const [installments, setInstallments] = useState([])
   const [showInstallmentManager, setShowInstallmentManager] = useState(false)
-  const [showAddInstallment, setShowAddInstallment] = useState(false)
-  const [newInstallmentForm, setNewInstallmentForm] = useState({
-    name: '', account_id: '', category_id: '',
-    total_amount: '', total_months: '',
-    start_month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
-    note: '',
-  })
   const [isInstallment, setIsInstallment] = useState(false)
   const [installmentMonths, setInstallmentMonths] = useState('')
   const [loading, setLoading] = useState(false)
@@ -501,27 +494,6 @@ export default function Budget({ session }) {
     setInstallments(data || [])
   }
 
-  async function handleCreateInstallment() {
-    const { name, account_id, total_amount, total_months, start_month, category_id, note } = newInstallmentForm
-    if (!name || !account_id || !total_amount || !total_months || !start_month) {
-      setMessage('請填寫必要欄位'); return
-    }
-    const monthly_amount = Math.round((parseFloat(total_amount) / parseInt(total_months)) * 100) / 100
-    const { error } = await supabase.from('installments').insert([{
-      user_id: session.user.id,
-      account_id,
-      category_id: category_id || null,
-      name, total_amount: parseFloat(total_amount),
-      monthly_amount, total_months: parseInt(total_months),
-      start_month, note,
-    }])
-    if (error) { setMessage(error.message); return }
-    setNewInstallmentForm({ name: '', account_id: '', category_id: '', total_amount: '', total_months: '', start_month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, note: '' })
-    setShowAddInstallment(false)
-    fetchInstallments()
-    setMessage('分期已新增')
-  }
-
   async function handleDeleteInstallment(id) {
     if (!confirm('確定刪除此分期紀錄？')) return
     const { error } = await supabase.from('installments').delete().eq('id', id)
@@ -725,8 +697,8 @@ export default function Budget({ session }) {
         </button>
         {showInstallmentManager && (
           <div className="budget-body">
-            {installments.length === 0 && !showAddInstallment && (
-              <p style={{ color: '#aaa', fontSize: '0.9rem' }}>尚無分期紀錄</p>
+            {installments.length === 0 && (
+              <p style={{ color: '#aaa', fontSize: '0.9rem' }}>尚無分期紀錄，可在記帳頁選信用卡帳戶後建立</p>
             )}
             {installments.map(inst => {
               const { paid, remaining, remainingAmount } = getInstallmentProgress(inst)
@@ -764,59 +736,6 @@ export default function Budget({ session }) {
               )
             })}
 
-            {showAddInstallment ? (
-              <div style={{ padding: '0.75rem', background: '#f5f5f5', borderRadius: '8px', marginTop: '0.5rem' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.75rem' }}>新增分期</div>
-                <input type='text' placeholder='商品名稱（例：iPhone 15）' value={newInstallmentForm.name}
-                  onChange={e => setNewInstallmentForm({ ...newInstallmentForm, name: e.target.value })}
-                  style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '0.5rem', boxSizing: 'border-box' }} />
-                <select value={newInstallmentForm.account_id}
-                  onChange={e => setNewInstallmentForm({ ...newInstallmentForm, account_id: e.target.value })}
-                  style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '0.5rem' }}>
-                  <option value=''>選擇帳戶（信用卡）</option>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-                <select value={newInstallmentForm.category_id}
-                  onChange={e => setNewInstallmentForm({ ...newInstallmentForm, category_id: e.target.value })}
-                  style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '0.5rem' }}>
-                  <option value=''>選擇分類（選填）</option>
-                  {categories.filter(c => c.type === 'expense').map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-                </select>
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <input type='number' placeholder='總金額' value={newInstallmentForm.total_amount}
-                    onChange={e => setNewInstallmentForm({ ...newInstallmentForm, total_amount: e.target.value })}
-                    style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
-                  <input type='number' placeholder='期數' value={newInstallmentForm.total_months}
-                    onChange={e => setNewInstallmentForm({ ...newInstallmentForm, total_months: e.target.value })}
-                    style={{ width: '80px', padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
-                </div>
-                {newInstallmentForm.total_amount && newInstallmentForm.total_months && (
-                  <div style={{ fontSize: '0.85rem', color: '#534AB7', marginBottom: '0.5rem', fontWeight: 600 }}>
-                    每月 ${(Math.round(parseFloat(newInstallmentForm.total_amount) / parseInt(newInstallmentForm.total_months) * 100) / 100).toLocaleString()}
-                  </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.85rem', color: '#555', whiteSpace: 'nowrap' }}>起始月</span>
-                  <input type='month' value={newInstallmentForm.start_month}
-                    onChange={e => setNewInstallmentForm({ ...newInstallmentForm, start_month: e.target.value })}
-                    style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
-                </div>
-                <input type='text' placeholder='備註（選填）' value={newInstallmentForm.note}
-                  onChange={e => setNewInstallmentForm({ ...newInstallmentForm, note: e.target.value })}
-                  style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '0.75rem', boxSizing: 'border-box' }} />
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button onClick={handleCreateInstallment}
-                    style={{ flex: 1, padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>新增</button>
-                  <button onClick={() => setShowAddInstallment(false)}
-                    style={{ padding: '0.5rem 0.8rem', background: '#eee', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>取消</button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => setShowAddInstallment(true)}
-                style={{ width: '100%', padding: '0.5rem', background: '#fff', color: '#534AB7', border: '1px solid #534AB7', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-                + 新增分期
-              </button>
-            )}
           </div>
         )}
       </div>
