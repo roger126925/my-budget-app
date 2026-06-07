@@ -119,8 +119,13 @@ export default function Budget({ session }) {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
 
+  const [household, setHousehold] = useState(null)
+  const [showHousehold, setShowHousehold] = useState(false)
+  const [householdName, setHouseholdName] = useState('')
+  const [inviteCodeInput, setInviteCodeInput] = useState('')
+
   const [showAccountManager, setShowAccountManager] = useState(false)
-  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0] })
+  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], is_shared: false })
   const [editAccountId, setEditAccountId] = useState(null)
   const [editAccountForm, setEditAccountForm] = useState({ name: '', color: COLORS[0] })
 
@@ -132,8 +137,40 @@ export default function Budget({ session }) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  useEffect(() => { fetchAccountsAndCategories() }, [])
+  useEffect(() => { fetchAccountsAndCategories(); fetchHousehold() }, [])
   useEffect(() => { fetchTransactions(); fetchBudgets() }, [selectedMonth])
+
+  async function fetchHousehold() {
+    const { data } = await supabase
+      .from('household_members')
+      .select('household_id, households(id, name, invite_code)')
+      .eq('user_id', session.user.id)
+      .limit(1)
+    setHousehold(data?.[0]?.households || null)
+  }
+
+  async function handleCreateHousehold() {
+    if (!householdName.trim()) { setMessage('請填寫共同帳戶名稱'); return }
+    const invite_code = Math.random().toString(36).substring(2, 8).toUpperCase()
+    const { data: hh, error } = await supabase.from('households').insert([{
+      name: householdName, invite_code, created_by: session.user.id,
+    }]).select().single()
+    if (error) { setMessage(error.message); return }
+    await supabase.from('household_members').insert([{ household_id: hh.id, user_id: session.user.id }])
+    setHouseholdName('')
+    fetchHousehold()
+  }
+
+  async function handleJoinHousehold() {
+    if (!inviteCodeInput.trim()) return
+    const { data: hh } = await supabase.from('households').select('id').eq('invite_code', inviteCodeInput.toUpperCase()).maybeSingle()
+    if (!hh) { setMessage('找不到此邀請碼'); return }
+    const { error } = await supabase.from('household_members').insert([{ household_id: hh.id, user_id: session.user.id }])
+    if (error) { setMessage(error.message); return }
+    setInviteCodeInput('')
+    fetchHousehold()
+    fetchAccountsAndCategories()
+  }
 
   async function fetchAccountsAndCategories() {
     const { data: acc } = await supabase.from('accounts').select('*')
@@ -324,10 +361,11 @@ export default function Budget({ session }) {
       name: newAccountForm.name,
       balance: parseFloat(newAccountForm.balance),
       color: newAccountForm.color,
-      user_id: session.user.id,
+      user_id: newAccountForm.is_shared ? null : session.user.id,
+      household_id: newAccountForm.is_shared ? household?.id : null,
     }])
     if (error) { setMessage(error.message); return }
-    setNewAccountForm({ name: '', balance: '', color: COLORS[0] })
+    setNewAccountForm({ name: '', balance: '', color: COLORS[0], is_shared: false })
     fetchAccountsAndCategories()
   }
 
@@ -397,10 +435,62 @@ export default function Budget({ session }) {
       <div className="account-cards">
         {accounts.map(a => (
           <div key={a.id} className="account-card" style={{ background: a.color + '22', border: `1.5px solid ${a.color}` }}>
-            <div className="account-card-label">{a.name}</div>
+            <div className="account-card-label">
+              {a.name}
+              {a.household_id && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#534AB7', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>共</span>}
+            </div>
             <div className="account-card-balance" style={{ color: a.color }}>${parseFloat(a.balance).toLocaleString()}</div>
           </div>
         ))}
+      </div>
+
+      {/* 共同帳戶管理 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowHousehold(!showHousehold)}>
+          {showHousehold ? '▲ 收起共同帳戶' : '▼ 共同帳戶設定'}
+        </button>
+        {showHousehold && (
+          <div className="budget-body">
+            {household ? (
+              <>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem' }}>{household.name}</div>
+                  <div style={{ fontSize: '0.85rem', color: '#888' }}>邀請碼：
+                    <span style={{ fontWeight: 700, letterSpacing: '2px', color: '#534AB7', marginLeft: '6px' }}>{household.invite_code}</span>
+                    <span style={{ fontSize: '0.8rem', color: '#aaa', marginLeft: '8px' }}>（傳給對方輸入即可加入）</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.5rem' }}>建立共同帳戶</div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input type='text' placeholder='共同帳戶名稱（例：家庭）' value={householdName}
+                      onChange={e => setHouseholdName(e.target.value)}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
+                    <button onClick={handleCreateHousehold}
+                      style={{ padding: '0.4rem 0.8rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      建立
+                    </button>
+                  </div>
+                </div>
+                <div style={{ borderTop: '1px solid #eee', paddingTop: '1rem' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.5rem' }}>加入共同帳戶</div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input type='text' placeholder='輸入邀請碼' value={inviteCodeInput}
+                      onChange={e => setInviteCodeInput(e.target.value)}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', textTransform: 'uppercase' }} />
+                    <button onClick={handleJoinHousehold}
+                      style={{ padding: '0.4rem 0.8rem', background: '#1D9E75', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      加入
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 帳戶管理 */}
@@ -460,6 +550,13 @@ export default function Budget({ session }) {
                     style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: newAccountForm.color === c ? '3px solid #333' : '3px solid transparent' }} />
                 ))}
               </div>
+              {household && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
+                  <input type='checkbox' checked={newAccountForm.is_shared}
+                    onChange={e => setNewAccountForm({ ...newAccountForm, is_shared: e.target.checked })} />
+                  設為共同帳戶（雙方皆可記帳）
+                </label>
+              )}
               <button onClick={handleCreateAccount}
                 style={{ width: '100%', padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
                 新增帳戶

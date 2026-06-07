@@ -31,7 +31,7 @@ src/
 | 表名 | 欄位 | 說明 |
 |------|------|------|
 | `accounts` | id, user_id, name, balance, color | 帳戶，RLS 隔離（每人只看自己的） |
-| `categories` | id, user_id, name, icon, type | 分類，RLS 隔離（每人各自管理）→ 待實作 |
+| `categories` | id, user_id, name, icon, type | 分類，RLS 隔離（每人各自管理） |
 | `transactions` | id, user_id, account_id, category_id, amount, type, note, txn_date | 交易紀錄，RLS 隔離 |
 | `budgets` | id, user_id, category_id, month, amount | 每月分類預算，unique(user_id, category_id, month) |
 
@@ -56,12 +56,12 @@ src/
 - [x] 前端新增交易時帶入 `user_id`
 - [x] 前端帳戶管理 UI（新增、編輯、刪除帳戶）
 
-### 🔴 高優先（進行中）
-- [ ] `categories` 加 `user_id` + 開啟 RLS（各自管理分類）
-- [ ] 前端分類管理 UI（新增、編輯、刪除分類）
-- [ ] 現有分類資料補上 `user_id`
+### 🔴 高優先（✅ 已完成）
+- [x] `categories` 加 `user_id` + 開啟 RLS（各自管理分類）
+- [x] 前端分類管理 UI（新增、編輯、刪除分類）
+- [x] 現有分類資料補上 `user_id`
 
-### 🟡 中優先（RLS 完成後再做）
+### 🟡 中優先（進行中）
 - [ ] 新增 `households` 表（id, name, invite_code）
 - [ ] 新增 `household_members` 表（household_id, user_id）
 - [ ] `accounts` 加 `household_id`（共同帳戶綁定 household）
@@ -74,6 +74,7 @@ src/
 - [ ] 自動計算每人應付金額與差額
 - [ ] 記住帳號及密碼（Supabase 預設已有 session 持久化，需確認是否真的需要）
 - [ ] 週期性開銷或收入
+- [ ] 讓Google不要跳出要不要翻譯通知
 
 ## 部署
 
