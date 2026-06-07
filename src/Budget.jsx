@@ -124,6 +124,11 @@ export default function Budget({ session }) {
   const [editAccountId, setEditAccountId] = useState(null)
   const [editAccountForm, setEditAccountForm] = useState({ name: '', color: COLORS[0] })
 
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
+  const [newCategoryForm, setNewCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
+  const [editCategoryId, setEditCategoryId] = useState(null)
+  const [editCategoryForm, setEditCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
+
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -275,6 +280,42 @@ export default function Budget({ session }) {
     fetchBudgets()
   }
 
+  async function handleCreateCategory() {
+    if (!newCategoryForm.name) { setMessage('請填寫分類名稱'); return }
+    const { error } = await supabase.from('categories').insert([{
+      name: newCategoryForm.name,
+      icon: newCategoryForm.icon,
+      type: newCategoryForm.type,
+      user_id: session.user.id,
+    }])
+    if (error) { setMessage(error.message); return }
+    setNewCategoryForm({ name: '', icon: '', type: 'expense' })
+    fetchAccountsAndCategories()
+  }
+
+  async function handleUpdateCategory() {
+    const { error } = await supabase.from('categories').update({
+      name: editCategoryForm.name,
+      icon: editCategoryForm.icon,
+      type: editCategoryForm.type,
+    }).eq('id', editCategoryId)
+    if (error) { setMessage(error.message); return }
+    setEditCategoryId(null)
+    fetchAccountsAndCategories()
+  }
+
+  async function handleDeleteCategory(id) {
+    if (!confirm('確定刪除此分類？')) return
+    const { error } = await supabase.from('categories').delete().eq('id', id)
+    if (error) { setMessage(error.message); return }
+    fetchAccountsAndCategories()
+  }
+
+  function startEditCategory(cat) {
+    setEditCategoryId(cat.id)
+    setEditCategoryForm({ name: cat.name, icon: cat.icon || '', type: cat.type })
+  }
+
   async function handleCreateAccount() {
     if (!newAccountForm.name || newAccountForm.balance === '') {
       setMessage('請填寫帳戶名稱和餘額'); return
@@ -422,6 +463,83 @@ export default function Budget({ session }) {
               <button onClick={handleCreateAccount}
                 style={{ width: '100%', padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
                 新增帳戶
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 分類管理 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowCategoryManager(!showCategoryManager)}>
+          {showCategoryManager ? '▲ 收起分類管理' : '▼ 分類管理'}
+        </button>
+        {showCategoryManager && (
+          <div className="budget-body">
+            {/* 支出 / 收入 分組顯示 */}
+            {['expense', 'income'].map(type => (
+              <div key={type} style={{ marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: type === 'expense' ? '#D85A30' : '#1D9E75', marginBottom: '0.4rem' }}>
+                  {type === 'expense' ? '支出分類' : '收入分類'}
+                </div>
+                {categories.filter(c => c.type === type).map(c => (
+                  editCategoryId === c.id ? (
+                    <div key={c.id} style={{ marginBottom: '0.5rem', padding: '0.75rem', background: '#f0f0f0', borderRadius: '8px' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <input type='text' placeholder='圖示（emoji）' value={editCategoryForm.icon}
+                          onChange={e => setEditCategoryForm({ ...editCategoryForm, icon: e.target.value })}
+                          style={{ width: '64px', padding: '0.4rem', fontSize: '1rem', textAlign: 'center', border: '1px solid #ddd', borderRadius: '4px' }} />
+                        <input type='text' placeholder='分類名稱' value={editCategoryForm.name}
+                          onChange={e => setEditCategoryForm({ ...editCategoryForm, name: e.target.value })}
+                          style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <button onClick={() => setEditCategoryForm({ ...editCategoryForm, type: 'expense' })}
+                          style={{ flex: 1, padding: '0.3rem', background: editCategoryForm.type === 'expense' ? '#D85A30' : '#eee', color: editCategoryForm.type === 'expense' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>支出</button>
+                        <button onClick={() => setEditCategoryForm({ ...editCategoryForm, type: 'income' })}
+                          style={{ flex: 1, padding: '0.3rem', background: editCategoryForm.type === 'income' ? '#1D9E75' : '#eee', color: editCategoryForm.type === 'income' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>收入</button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button onClick={handleUpdateCategory}
+                          style={{ flex: 1, padding: '0.4rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>儲存</button>
+                        <button onClick={() => setEditCategoryId(null)}
+                          style={{ padding: '0.4rem 0.8rem', background: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>取消</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #eee' }}>
+                      <span>{c.icon} {c.name}</span>
+                      <div style={{ display: 'flex', gap: '0.2rem' }}>
+                        <button onClick={() => startEditCategory(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✎</button>
+                        <button onClick={() => handleDeleteCategory(c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✕</button>
+                      </div>
+                    </div>
+                  )
+                ))}
+              </div>
+            ))}
+
+            {/* 新增分類 */}
+            <div style={{ paddingTop: '1rem', borderTop: '1px solid #eee' }}>
+              <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>新增分類</div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <button onClick={() => setNewCategoryForm({ ...newCategoryForm, type: 'expense' })}
+                  style={{ flex: 1, padding: '0.3rem', background: newCategoryForm.type === 'expense' ? '#D85A30' : '#eee', color: newCategoryForm.type === 'expense' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>支出</button>
+                <button onClick={() => setNewCategoryForm({ ...newCategoryForm, type: 'income' })}
+                  style={{ flex: 1, padding: '0.3rem', background: newCategoryForm.type === 'income' ? '#1D9E75' : '#eee', color: newCategoryForm.type === 'income' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>收入</button>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <input type='text' placeholder='😀' value={newCategoryForm.icon}
+                  onChange={e => setNewCategoryForm({ ...newCategoryForm, icon: e.target.value })}
+                  style={{ width: '64px', padding: '0.4rem', fontSize: '1rem', textAlign: 'center', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }} />
+                <input type='text' placeholder='分類名稱' value={newCategoryForm.name}
+                  onChange={e => setNewCategoryForm({ ...newCategoryForm, name: e.target.value })}
+                  style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#999', marginBottom: '0.5rem' }}>常用：🍜 🚇 🛒 🎮 💊 🏠 💰 🎁 ✈️ 📱</div>
+              <button onClick={handleCreateCategory}
+                style={{ width: '100%', padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
+                新增分類
               </button>
             </div>
           </div>
