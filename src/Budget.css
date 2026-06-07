@@ -1,0 +1,297 @@
+/* ── Layout ─────────────────────────── */
+.budget-container {
+  max-width: 480px;
+  margin: 1.5rem auto;
+  padding: 1rem;
+}
+
+/* ── Account cards ───────────────────── */
+.account-cards {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.account-card {
+  flex: 1;
+  min-width: 110px;
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.account-card-label {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.account-card-balance {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+/* ── Section header (title + tab group) ─ */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.tab-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ── Add / Edit form ─────────────────── */
+.type-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form-col input,
+.form-col select {
+  padding: 0.5rem;
+  font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.btn-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ── Month nav ───────────────────────── */
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2.5rem 0 1rem;
+}
+
+.month-nav h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+/* ── Pie chart ───────────────────────── */
+.pie-container {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.pie-legend {
+  flex: 1;
+  min-width: 130px;
+}
+
+.pie-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.pie-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.pie-legend-label {
+  font-size: 0.9rem;
+}
+
+.pie-legend-value {
+  margin-left: auto;
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.pie-totals {
+  border-top: 1px solid #eee;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.pie-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.pie-total-row + .pie-total-row {
+  margin-top: 0.3rem;
+}
+
+/* ── Budget section ──────────────────── */
+.budget-section {
+  margin-bottom: 1.5rem;
+}
+
+.budget-toggle {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.4rem 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #534AB7;
+  width: 100%;
+}
+
+.budget-body {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #fafafa;
+  border-radius: 8px;
+}
+
+.budget-row {
+  margin-bottom: 1rem;
+}
+
+.budget-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.budget-actual {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.budget-input {
+  width: 80px;
+  padding: 0.25rem;
+  font-size: 0.9rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.progress-bg {
+  height: 6px;
+  background: #eee;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.budget-over {
+  font-size: 0.8rem;
+  color: #D85A30;
+  margin-top: 0.2rem;
+}
+
+/* ── Filter + export ─────────────────── */
+.filter-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.filter-row select {
+  flex: 1;
+  padding: 0.4rem;
+  font-size: 0.9rem;
+  min-width: 100px;
+}
+
+/* ── Transaction list ────────────────── */
+.txn-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #eee;
+  gap: 0.75rem;
+}
+
+.txn-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.txn-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.txn-sub {
+  font-size: 0.85rem;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.txn-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.txn-amount {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Mobile ──────────────────────────── */
+@media (max-width: 520px) {
+  .budget-container {
+    padding: 0.75rem;
+    margin: 0;
+  }
+
+  .account-card {
+    min-width: 90px;
+    padding: 0.75rem;
+  }
+
+  .account-card-balance {
+    font-size: 1.15rem;
+  }
+
+  .month-nav h2 {
+    font-size: 1rem;
+  }
+
+  .pie-container {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .filter-row {
+    flex-direction: column;
+  }
+
+  .filter-row select {
+    min-width: unset;
+  }
+}
