@@ -123,6 +123,7 @@ export default function Budget({ session }) {
   const [showHousehold, setShowHousehold] = useState(false)
   const [householdName, setHouseholdName] = useState('')
   const [inviteCodeInput, setInviteCodeInput] = useState('')
+  const [householdBudgetInput, setHouseholdBudgetInput] = useState('')
 
   const [showAccountManager, setShowAccountManager] = useState(false)
   const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], is_shared: false })
@@ -143,10 +144,19 @@ export default function Budget({ session }) {
   async function fetchHousehold() {
     const { data } = await supabase
       .from('household_members')
-      .select('household_id, households(id, name, invite_code)')
+      .select('household_id, households(id, name, invite_code, monthly_budget)')
       .eq('user_id', session.user.id)
       .limit(1)
-    setHousehold(data?.[0]?.households || null)
+    const hh = data?.[0]?.households || null
+    setHousehold(hh)
+    setHouseholdBudgetInput(hh?.monthly_budget ? String(hh.monthly_budget) : '')
+  }
+
+  async function handleSaveHouseholdBudget() {
+    const amount = parseFloat(householdBudgetInput) || 0
+    const { error } = await supabase.from('households').update({ monthly_budget: amount }).eq('id', household.id)
+    if (error) { setMessage(error.message); return }
+    setHousehold({ ...household, monthly_budget: amount })
   }
 
   async function handleCreateHousehold() {
@@ -424,6 +434,19 @@ export default function Budget({ session }) {
     actualByCategory[t.category_id] = (actualByCategory[t.category_id] || 0) + parseFloat(t.amount)
   })
 
+  const sharedAccounts = accounts.filter(a => a.household_id)
+  const sharedAccountIds = new Set(sharedAccounts.map(a => a.id))
+  const sharedExpense = transactions
+    .filter(t => sharedAccountIds.has(t.account_id) && t.type === 'expense')
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+  const sharedIncome = transactions
+    .filter(t => sharedAccountIds.has(t.account_id) && t.type === 'income')
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+  const sharedBalance = sharedAccounts.reduce((sum, a) => sum + parseFloat(a.balance), 0)
+  const hhBudget = parseFloat(household?.monthly_budget) || 0
+  const hhPct = hhBudget > 0 ? Math.min((sharedExpense / hhBudget) * 100, 100) : 0
+  const hhBarColor = sharedExpense > hhBudget && hhBudget > 0 ? '#D85A30' : hhPct > 80 ? '#F5A623' : '#1D9E75'
+
   const [year, month] = selectedMonth.split('-')
   const monthLabel = `${year} 年 ${parseInt(month)} 月`
 
@@ -460,6 +483,61 @@ export default function Budget({ session }) {
                     <span style={{ fontSize: '0.8rem', color: '#aaa', marginLeft: '8px' }}>（傳給對方輸入即可加入）</span>
                   </div>
                 </div>
+
+                {sharedAccounts.length > 0 && (
+                  <div style={{ padding: '0.75rem', background: '#f8f7ff', borderRadius: '8px', border: '1px solid #534AB733' }}>
+                    <div style={{ fontWeight: 700, marginBottom: '0.75rem', color: '#534AB7', fontSize: '0.9rem' }}>{monthLabel} 共同帳戶</div>
+
+                    {/* 月預算輸入 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#555', whiteSpace: 'nowrap' }}>月預算</span>
+                      <input type='number' placeholder='未設定' value={householdBudgetInput}
+                        onChange={e => setHouseholdBudgetInput(e.target.value)}
+                        onBlur={handleSaveHouseholdBudget}
+                        style={{ flex: 1, padding: '0.3rem 0.5rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
+                    </div>
+
+                    {/* 統計數字 */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
+                        <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '2px' }}>本月已花</div>
+                        <div style={{ fontWeight: 700, color: '#D85A30' }}>${sharedExpense.toLocaleString()}</div>
+                      </div>
+                      {hhBudget > 0 && (
+                        <div style={{ textAlign: 'center', flex: 1 }}>
+                          <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '2px' }}>剩餘預算</div>
+                          <div style={{ fontWeight: 700, color: sharedExpense > hhBudget ? '#D85A30' : '#1D9E75' }}>
+                            ${Math.max(hhBudget - sharedExpense, 0).toLocaleString()}
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ textAlign: 'center', flex: 1 }}>
+                        <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '2px' }}>帳戶餘額</div>
+                        <div style={{ fontWeight: 700, color: '#534AB7' }}>${sharedBalance.toLocaleString()}</div>
+                      </div>
+                    </div>
+
+                    {/* 進度條 */}
+                    {hhBudget > 0 && (
+                      <>
+                        <div style={{ height: '6px', background: '#eee', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.3rem' }}>
+                          <div style={{ height: '100%', width: `${hhPct}%`, background: hhBarColor, borderRadius: '3px', transition: 'width 0.3s' }} />
+                        </div>
+                        {sharedExpense > hhBudget && (
+                          <div style={{ fontSize: '0.8rem', color: '#D85A30' }}>超出預算 ${(sharedExpense - hhBudget).toLocaleString()}</div>
+                        )}
+                      </>
+                    )}
+
+                    {sharedIncome > 0 && (
+                      <div style={{ fontSize: '0.82rem', color: '#1D9E75', marginTop: '0.4rem' }}>本月收入 +${sharedIncome.toLocaleString()}</div>
+                    )}
+                  </div>
+                )}
+
+                {sharedAccounts.length === 0 && (
+                  <div style={{ fontSize: '0.85rem', color: '#aaa' }}>尚無共同帳戶，請在「帳戶管理」中新增並勾選「設為共同帳戶」</div>
+                )}
               </>
             ) : (
               <>
