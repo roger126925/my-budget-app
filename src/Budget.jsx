@@ -135,6 +135,7 @@ export default function Budget({ session }) {
   const [editCategoryId, setEditCategoryId] = useState(null)
   const [editCategoryForm, setEditCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
 
+  const [page, setPage] = useState('main')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -453,10 +454,11 @@ export default function Budget({ session }) {
   const monthLabel = `${year} 年 ${parseInt(month)} 月`
 
   return (
-    <div className="budget-container">
+    <div className="budget-container" style={{ paddingBottom: '72px' }}>
 
-      {/* 帳戶餘額 */}
-      <h2>帳戶餘額</h2>
+      {page === 'main' && <>
+        {/* 帳戶餘額 */}
+        <h2>帳戶餘額</h2>
       <div className="account-cards">
         {accounts.map(a => (
           <div key={a.id} className="account-card" style={{ background: a.color + '22', border: `1.5px solid ${a.color}` }}>
@@ -468,6 +470,11 @@ export default function Budget({ session }) {
           </div>
         ))}
       </div>
+      </>}
+
+      {page === 'settings' && <>
+        <h2 style={{ marginBottom: '0.25rem' }}>設定</h2>
+        {message && <p style={{ color: message.includes('成功') ? 'green' : 'red', marginTop: '0.25rem' }}>{message}</p>}
 
       {/* 共同帳戶管理 */}
       <div className="budget-section">
@@ -733,6 +740,9 @@ export default function Budget({ session }) {
           </div>
         )}
       </div>
+      </>}
+
+      {page === 'main' && <>
 
       {/* 記帳 / 轉帳 切換 */}
       <div className="section-header">
@@ -887,6 +897,18 @@ export default function Budget({ session }) {
           </div>
         ))
       }
+      </>}
+
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: '#fff', borderTop: '1px solid #eee', zIndex: 100 }}>
+        <button onClick={() => setPage('main')}
+          style={{ flex: 1, padding: '0.85rem 0', fontSize: '0.9rem', border: 'none', background: 'none', cursor: 'pointer', fontWeight: page === 'main' ? 700 : 400, color: page === 'main' ? '#534AB7' : '#888', borderTop: page === 'main' ? '2px solid #534AB7' : '2px solid transparent' }}>
+          記帳
+        </button>
+        <button onClick={() => setPage('settings')}
+          style={{ flex: 1, padding: '0.85rem 0', fontSize: '0.9rem', border: 'none', background: 'none', cursor: 'pointer', fontWeight: page === 'settings' ? 700 : 400, color: page === 'settings' ? '#534AB7' : '#888', borderTop: page === 'settings' ? '2px solid #534AB7' : '2px solid transparent' }}>
+          設定
+        </button>
+      </div>
     </div>
   )
 }
