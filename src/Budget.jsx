@@ -128,7 +128,7 @@ export default function Budget({ session }) {
   const [showAccountManager, setShowAccountManager] = useState(false)
   const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], is_shared: false })
   const [editAccountId, setEditAccountId] = useState(null)
-  const [editAccountForm, setEditAccountForm] = useState({ name: '', color: COLORS[0], is_shared: false })
+  const [editAccountForm, setEditAccountForm] = useState({ name: '', balance: '', color: COLORS[0], is_shared: false })
 
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [newCategoryForm, setNewCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
@@ -136,11 +136,15 @@ export default function Budget({ session }) {
   const [editCategoryForm, setEditCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
 
   const [page, setPage] = useState('main')
+  const [showDataManager, setShowDataManager] = useState(false)
+  const [dataMonth, setDataMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+  const [dataTransactions, setDataTransactions] = useState([])
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => { fetchAccountsAndCategories(); fetchHousehold() }, [])
   useEffect(() => { fetchTransactions(); fetchBudgets() }, [selectedMonth])
+  useEffect(() => { if (showDataManager) fetchDataTransactions(dataMonth) }, [dataMonth, showDataManager])
 
   async function fetchHousehold() {
     const { data } = await supabase
@@ -383,6 +387,7 @@ export default function Budget({ session }) {
   async function handleUpdateAccount() {
     const { error } = await supabase.from('accounts').update({
       name: editAccountForm.name,
+      balance: parseFloat(editAccountForm.balance) || 0,
       color: editAccountForm.color,
       user_id: editAccountForm.is_shared ? null : session.user.id,
       household_id: editAccountForm.is_shared ? household?.id : null,
@@ -401,7 +406,45 @@ export default function Budget({ session }) {
 
   function startEditAccount(account) {
     setEditAccountId(account.id)
-    setEditAccountForm({ name: account.name, color: account.color, is_shared: !!account.household_id })
+    setEditAccountForm({ name: account.name, balance: String(account.balance), color: account.color, is_shared: !!account.household_id })
+  }
+
+  async function fetchDataTransactions(month) {
+    const [year, m] = month.split('-')
+    const start = `${year}-${m}-01`
+    const lastDay = new Date(parseInt(year), parseInt(m), 0).getDate()
+    const end = `${year}-${m}-${String(lastDay).padStart(2, '0')}`
+    const { data } = await supabase
+      .from('transactions')
+      .select('*, accounts(name), categories(name)')
+      .gte('txn_date', start).lte('txn_date', end)
+      .order('txn_date', { ascending: false })
+    setDataTransactions(data || [])
+  }
+
+  async function handleDeleteDataTxn(txn) {
+    const { error } = await supabase.from('transactions').delete().eq('id', txn.id)
+    if (error) { setMessage(error.message); return }
+    const account = accounts.find(a => a.id === txn.account_id)
+    if (account) {
+      const newBalance = txn.type === 'expense'
+        ? parseFloat(account.balance) + parseFloat(txn.amount)
+        : parseFloat(account.balance) - parseFloat(txn.amount)
+      await supabase.from('accounts').update({ balance: newBalance }).eq('id', txn.account_id)
+      fetchAccountsAndCategories()
+    }
+    fetchDataTransactions(dataMonth)
+    fetchTransactions()
+  }
+
+  async function handleClearAllTransactions() {
+    if (!confirm('確定要刪除所有交易記錄？此操作無法復原！')) return
+    if (!confirm('再次確認：刪除全部交易記錄？帳戶餘額請手動修正。')) return
+    const { error } = await supabase.from('transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (error) { setMessage(error.message); return }
+    setMessage('已清除全部交易記錄')
+    fetchDataTransactions(dataMonth)
+    fetchTransactions()
   }
 
   function exportCSV() {
@@ -634,6 +677,9 @@ export default function Budget({ session }) {
                   <input type='text' value={editAccountForm.name}
                     onChange={e => setEditAccountForm({ ...editAccountForm, name: e.target.value })}
                     style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                  <input type='number' placeholder='帳戶餘額' value={editAccountForm.balance}
+                    onChange={e => setEditAccountForm({ ...editAccountForm, balance: e.target.value })}
+                    style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
                   <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
                     {COLORS.map(c => (
                       <div key={c} onClick={() => setEditAccountForm({ ...editAccountForm, color: c })}
@@ -778,6 +824,51 @@ export default function Budget({ session }) {
                 新增分類
               </button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* 資料管理 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowDataManager(!showDataManager)}>
+          {showDataManager ? '▲ 收起資料管理' : '▼ 資料管理'}
+        </button>
+        {showDataManager && (
+          <div className="budget-body">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <span style={{ fontSize: '0.9rem', color: '#555', whiteSpace: 'nowrap' }}>選擇月份</span>
+              <input type='month' value={dataMonth}
+                onChange={e => setDataMonth(e.target.value)}
+                style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
+            </div>
+            {dataTransactions.length === 0 ? (
+              <p style={{ color: '#aaa', fontSize: '0.9rem' }}>該月無交易記錄</p>
+            ) : (
+              <>
+                {dataTransactions.map(t => (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f0f0f0' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.categories?.name} · {t.accounts?.name}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#aaa' }}>{t.txn_date}{t.note && ` · ${t.note}`}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                      <span style={{ color: t.type === 'expense' ? '#D85A30' : '#1D9E75', fontWeight: 600, fontSize: '0.9rem' }}>
+                        {t.type === 'expense' ? '-' : '+'}{parseFloat(t.amount).toLocaleString()}
+                      </span>
+                      <button onClick={() => handleDeleteDataTxn(t)}
+                        style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: '1.1rem', padding: '0.2rem 0.3rem' }}>✕</button>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: '#aaa' }}>共 {dataTransactions.length} 筆</div>
+              </>
+            )}
+            <button onClick={handleClearAllTransactions}
+              style={{ marginTop: '1rem', width: '100%', padding: '0.5rem', background: '#fff', color: '#D85A30', border: '1px solid #D85A30', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>
+              清除全部交易記錄
+            </button>
           </div>
         )}
       </div>
