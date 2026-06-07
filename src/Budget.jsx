@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import supabase from './supabase'
 import './Budget.css'
 
@@ -136,6 +136,8 @@ export default function Budget({ session }) {
   const [editCategoryForm, setEditCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
 
   const [page, setPage] = useState('main')
+  const [refreshing, setRefreshing] = useState(false)
+  const pullStartY = useRef(null)
   const [showDataManager, setShowDataManager] = useState(false)
   const [dataMonth, setDataMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
   const [dataTransactions, setDataTransactions] = useState([])
@@ -218,6 +220,21 @@ export default function Budget({ session }) {
     await fetchAccountsAndCategories()
     await fetchTransactions()
     await fetchBudgets()
+  }
+
+  function onTouchStart(e) {
+    if (window.scrollY === 0) pullStartY.current = e.touches[0].clientY
+  }
+
+  async function onTouchEnd(e) {
+    if (pullStartY.current === null) return
+    const dist = e.changedTouches[0].clientY - pullStartY.current
+    pullStartY.current = null
+    if (dist > 65) {
+      setRefreshing(true)
+      await fetchAll()
+      setRefreshing(false)
+    }
   }
 
   function changeMonth(delta) {
@@ -507,7 +524,13 @@ export default function Budget({ session }) {
   const monthLabel = `${year} 年 ${parseInt(month)} 月`
 
   return (
-    <div className="budget-container" style={{ paddingBottom: '72px' }}>
+    <div className="budget-container" style={{ paddingBottom: '72px' }}
+      onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {refreshing && (
+        <div style={{ textAlign: 'center', padding: '0.6rem', color: '#534AB7', fontSize: '0.88rem', background: '#f0eeff', borderRadius: '8px', marginBottom: '0.5rem' }}>
+          更新中...
+        </div>
+      )}
 
       {page === 'main' && <>
         {/* 帳戶餘額 */}
