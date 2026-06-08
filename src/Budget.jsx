@@ -1069,19 +1069,13 @@ export default function Budget({ session }) {
         {/* 信用卡記帳表單 */}
         {creditAccounts.length > 0 && (
           <div style={{ marginBottom: '1.5rem' }}>
-            <div className="section-header" style={{ marginBottom: '0.5rem' }}>
-              <h3 style={{ margin: 0 }}>{editId ? '編輯記帳' : '刷卡記帳'}</h3>
-            </div>
-            <div className="type-row">
-              <button style={btn(form.type === 'expense', '#D85A30')} onClick={() => setForm({ ...form, type: 'expense' })}>支出</button>
-              <button style={btn(form.type === 'income', '#1D9E75')} onClick={() => setForm({ ...form, type: 'income' })}>收入 / 繳費</button>
-            </div>
+            <h3 style={{ margin: '0 0 0.5rem' }}>{editId ? '編輯記帳' : '刷卡記帳'}</h3>
             <div className="form-col">
-              <select value={form.account_id} onChange={e => { setForm({ ...form, account_id: e.target.value }); setIsInstallment(false); setInstallmentMonths('') }}>
+              <select value={form.account_id} onChange={e => { setForm({ ...form, account_id: e.target.value, type: 'expense' }); setIsInstallment(false); setInstallmentMonths('') }}>
                 <option value=''>選擇信用卡</option>
                 {creditAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
-              {form.account_id && creditAccounts.find(a => a.id === form.account_id) && form.type === 'expense' && !editId && (
+              {form.account_id && creditAccounts.find(a => a.id === form.account_id) && !editId && (
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button type='button' onClick={() => setIsInstallment(false)}
                     style={{ flex: 1, padding: '0.4rem', background: !isInstallment ? '#534AB7' : '#eee', color: !isInstallment ? '#fff' : '#555', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: isInstallment ? 400 : 600 }}>
@@ -1095,7 +1089,7 @@ export default function Budget({ session }) {
               )}
               <select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })}>
                 <option value=''>選擇分類</option>
-                {(form.type === 'expense' ? expenseCategories : incomeCategories).map(c =>
+                {expenseCategories.map(c =>
                   <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
                 )}
               </select>
@@ -1186,69 +1180,6 @@ export default function Budget({ session }) {
           )
         })}
 
-        {/* 信用卡帳戶管理 */}
-        <div className="budget-section" style={{ marginTop: '1rem' }}>
-          <button className="budget-toggle" onClick={() => setShowCreditAccountManager(!showCreditAccountManager)}>
-            {showCreditAccountManager ? '▲ 收起信用卡帳戶管理' : '▼ 信用卡帳戶管理'}
-          </button>
-          {showCreditAccountManager && (
-            <div className="budget-body">
-              {creditAccounts.map(a => (
-                editAccountId === a.id ? (
-                  <div key={a.id} style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#f0f0f0', borderRadius: '8px' }}>
-                    <input type='text' value={editAccountForm.name}
-                      onChange={e => setEditAccountForm({ ...editAccountForm, name: e.target.value })}
-                      style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
-                    <input type='number' placeholder='帳戶餘額（待繳金額）' value={editAccountForm.balance}
-                      onChange={e => setEditAccountForm({ ...editAccountForm, balance: e.target.value })}
-                      style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
-                    <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
-                      value={editAccountForm.billing_day}
-                      onChange={e => setEditAccountForm({ ...editAccountForm, billing_day: e.target.value })}
-                      style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button onClick={handleUpdateAccount}
-                        style={{ flex: 1, padding: '0.4rem', background: '#D85A30', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>儲存</button>
-                      <button onClick={() => setEditAccountId(null)}
-                        style={{ padding: '0.4rem 0.8rem', background: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>取消</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid #eee' }}>
-                    <div>
-                      <span style={{ fontWeight: 500 }}>{a.name}</span>
-                      <span style={{ color: '#888', fontSize: '0.85rem', marginLeft: '0.5rem' }}>待繳 ${parseFloat(a.balance).toLocaleString()}</span>
-                      {a.billing_day && <span style={{ color: '#aaa', fontSize: '0.78rem', marginLeft: '0.4rem' }}>・{a.billing_day}號出帳</span>}
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.2rem' }}>
-                      <button onClick={() => startEditAccount(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✎</button>
-                      <button onClick={() => handleDeleteAccount(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✕</button>
-                    </div>
-                  </div>
-                )
-              ))}
-              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>新增信用卡</div>
-                <input type='text' placeholder='卡片名稱（例：玉山 Cube 卡）'
-                  value={newAccountForm.name}
-                  onChange={e => setNewAccountForm({ ...newAccountForm, name: e.target.value, account_type: 'credit' })}
-                  style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
-                <input type='number' placeholder='初始待繳金額（通常為 0）'
-                  value={newAccountForm.balance}
-                  onChange={e => setNewAccountForm({ ...newAccountForm, balance: e.target.value, account_type: 'credit' })}
-                  style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
-                <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
-                  value={newAccountForm.billing_day}
-                  onChange={e => setNewAccountForm({ ...newAccountForm, billing_day: e.target.value, account_type: 'credit' })}
-                  style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
-                <button onClick={handleCreateAccount}
-                  style={{ width: '100%', padding: '0.5rem', background: '#D85A30', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
-                  新增信用卡
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
       </>}
 
       {page === 'main' && <>
