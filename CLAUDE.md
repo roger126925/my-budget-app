@@ -81,6 +81,11 @@ src/
 - [ ] 常用 EMOJI 無法點擊（分類管理頁）
 - [ ] 抑制 Google 翻譯彈出通知
 
+## 已知 Bug
+
+- [ ] **分期建立後信用卡待繳未更新**：`handleSubmit()` 分期路徑缺少 `accounts.update`，信用卡「待繳」金額不會增加。修法：insert 成功後加上餘額更新 + `fetchAccountsAndCategories()`
+- [ ] **calcStartMonth 邊界條件**：條件 `day <= billingDay` 應改為 `day < billingDay`，使刷卡日等於出帳日時正確推入下個月
+
 ## 部署
 
 - 平台：Vercel（免費）

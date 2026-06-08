@@ -174,3 +174,18 @@
 - 移除設定頁「新增分期」表單（建立分期已整合至記帳表單）
 - 保留：進度追蹤、本月繳款、刪除
 - 空清單提示「可在記帳頁選信用卡帳戶後建立」
+
+---
+
+## 2026-06-08（已知 Bug 記錄）
+
+### Bug 1：建立分期後信用卡待繳金額未更新
+- 位置：`Budget.jsx` `handleSubmit()` 分期路徑（~line 282）
+- 問題：`installments.insert` 成功後未呼叫 `accounts.update`，導致信用卡帳戶卡片的「待繳 $X」完全不動
+- 對比：一般單筆支出在 insert 後都有執行餘額更新，分期路徑缺漏此步驟
+- 修法：insert 成功後，將 `total_amount` 加進信用卡 balance，並呼叫 `fetchAccountsAndCategories()`
+
+### Bug 2：calcStartMonth 邊界條件錯誤（出帳日當天歸屬）
+- 位置：`Budget.jsx` `calcStartMonth()` line 476
+- 問題：目前條件 `day <= billingDay` 在刷卡日**等於**出帳日時仍歸到本月，但出帳日當天帳單通常已結清，該筆消費應推入下期
+- 修法：條件改為 `day < billingDay`（嚴格小於），使刷卡日 ≥ 出帳日時一律推到下個月

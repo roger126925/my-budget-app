@@ -291,11 +291,14 @@ export default function Budget({ session }) {
         note: '',
       }])
       if (error) { setMessage(error.message); setLoading(false); return }
+      const newBalance = parseFloat(selectedAcc.balance) + amount
+      await supabase.from('accounts').update({ balance: newBalance }).eq('id', form.account_id)
       setMessage(`分期已建立！${startMonth} 起，每月 $${monthly.toLocaleString()}，共 ${months} 期`)
       setForm({ ...form, amount: '', note: '' })
       setIsInstallment(false)
       setInstallmentMonths('')
       fetchInstallments()
+      fetchAccountsAndCategories()
       setLoading(false)
       return
     }
@@ -473,7 +476,7 @@ export default function Budget({ session }) {
 
   function calcStartMonth(txnDate, billingDay) {
     const [year, month, day] = txnDate.split('-').map(Number)
-    if (!billingDay || day <= billingDay) {
+    if (!billingDay || day < billingDay) {
       return `${year}-${String(month).padStart(2, '0')}`
     }
     const next = new Date(year, month, 1) // month from split is 1-indexed → Date treats as next month
