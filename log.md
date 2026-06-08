@@ -177,15 +177,34 @@
 
 ---
 
-## 2026-06-08（已知 Bug 記錄）
+## 2026-06-08（Bug 修復）
 
-### Bug 1：建立分期後信用卡待繳金額未更新
-- 位置：`Budget.jsx` `handleSubmit()` 分期路徑（~line 282）
-- 問題：`installments.insert` 成功後未呼叫 `accounts.update`，導致信用卡帳戶卡片的「待繳 $X」完全不動
-- 對比：一般單筆支出在 insert 後都有執行餘額更新，分期路徑缺漏此步驟
-- 修法：insert 成功後，將 `total_amount` 加進信用卡 balance，並呼叫 `fetchAccountsAndCategories()`
+### Bug 修復：建立分期後信用卡待繳金額未更新
+- 位置：`Budget.jsx` `handleSubmit()` 分期路徑
+- 問題：`installments.insert` 成功後未呼叫 `accounts.update`，待繳金額不動
+- 修法：insert 成功後將 `total_amount` 加進信用卡 balance，並呼叫 `fetchAccountsAndCategories()`
 
-### Bug 2：calcStartMonth 邊界條件錯誤（出帳日當天歸屬）
-- 位置：`Budget.jsx` `calcStartMonth()` line 476
-- 問題：目前條件 `day <= billingDay` 在刷卡日**等於**出帳日時仍歸到本月，但出帳日當天帳單通常已結清，該筆消費應推入下期
-- 修法：條件改為 `day < billingDay`（嚴格小於），使刷卡日 ≥ 出帳日時一律推到下個月
+### Bug 修復：calcStartMonth 邊界條件（出帳日當天歸屬）
+- 位置：`Budget.jsx` `calcStartMonth()`
+- 問題：條件 `day <= billingDay` 在刷卡日等於出帳日時仍歸到本月
+- 修法：改為 `day < billingDay`，刷卡日 ≥ 出帳日時一律推到下個月
+
+### Bug 修復：本月繳款讓待繳金額反而增加
+- 位置：`Budget.jsx` `handlePayInstallment()`
+- 問題：信用卡繳款用 `balance + monthly_amount`（方向錯誤），越繳待繳越多；且 transaction type 為 `'expense'`，刪除時餘額回復方向也跟著錯
+- 修法：改為 `balance - monthly_amount`，transaction type 改為 `'income'`（信用卡 income = 減少待繳，刪除時方向一致正確）
+- 分期待繳邏輯整理：建立分期 → 待繳 +total_amount；本月繳款 → 待繳 −monthly_amount；刪除繳款紀錄 → 待繳 +monthly_amount（自動）
+
+---
+
+## 2026-06-08（信用卡獨立頁籤）
+
+### 新功能：信用卡頁面
+- 底部導航新增「信用卡」頁籤，共三頁：記帳 / 信用卡 / 設定；信用卡頁籤以橘紅色 highlight
+- 記帳頁帳戶卡片改為只顯示一般帳戶（`generalAccounts`），信用卡帳戶移至信用卡頁
+- 信用卡頁內容：
+  - 月份切換（與記帳頁共用 `selectedMonth`）
+  - 各信用卡帳戶卡片（顯示待繳金額）
+  - 本月摘要雙格：本月刷卡支出（credit 帳戶 expense 合計）/ 本月應繳分期款（進行中分期 monthly_amount 加總）
+  - 所有分期計畫進度列表 + 本月繳款按鈕
+- 設定頁移除分期管理區塊（已整合至信用卡頁）

@@ -590,6 +590,15 @@ export default function Budget({ session }) {
 
   const expenseCategories = categories.filter(c => c.type === 'expense')
   const incomeCategories = categories.filter(c => c.type === 'income')
+  const creditAccounts = accounts.filter(a => a.account_type === 'credit')
+  const generalAccounts = accounts.filter(a => a.account_type !== 'credit')
+  const creditAccountIds = new Set(creditAccounts.map(a => a.id))
+  const creditExpense = transactions
+    .filter(t => creditAccountIds.has(t.account_id) && t.type === 'expense')
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+  const monthlyDue = installments
+    .filter(inst => getInstallmentProgress(inst).remaining > 0)
+    .reduce((sum, inst) => sum + inst.monthly_amount, 0)
 
   const filteredTransactions = transactions.filter(t =>
     (!filterCategory || t.category_id === filterCategory) &&
@@ -627,24 +636,19 @@ export default function Budget({ session }) {
       )}
 
       {page === 'main' && <>
-        {/* 帳戶餘額 */}
+        {/* 帳戶餘額（一般帳戶） */}
         <h2>帳戶餘額</h2>
       <div className="account-cards">
-        {accounts.map(a => {
-          const isCredit = a.account_type === 'credit'
-          const cardColor = isCredit ? '#D85A30' : a.color
-          return (
-            <div key={a.id} className="account-card" style={{ background: cardColor + '18', border: `1.5px solid ${cardColor}` }}>
+        {generalAccounts.map(a => (
+            <div key={a.id} className="account-card" style={{ background: a.color + '18', border: `1.5px solid ${a.color}` }}>
               <div className="account-card-label">
                 {a.name}
-                {isCredit && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#D85A30', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>卡</span>}
                 {a.household_id && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#534AB7', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>共</span>}
               </div>
-              <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>{isCredit ? '待繳' : '餘額'}</div>
-              <div className="account-card-balance" style={{ color: cardColor }}>${parseFloat(a.balance).toLocaleString()}</div>
+              <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>餘額</div>
+              <div className="account-card-balance" style={{ color: a.color }}>${parseFloat(a.balance).toLocaleString()}</div>
             </div>
-          )
-        })}
+        ))}
       </div>
       </>}
 
@@ -689,56 +693,6 @@ export default function Budget({ session }) {
                 </div>
               )
             })}
-          </div>
-        )}
-      </div>
-
-      {/* 分期管理 */}
-      <div className="budget-section">
-        <button className="budget-toggle" onClick={() => setShowInstallmentManager(!showInstallmentManager)}>
-          {showInstallmentManager ? '▲ 收起分期管理' : '▼ 分期管理'}
-        </button>
-        {showInstallmentManager && (
-          <div className="budget-body">
-            {installments.length === 0 && (
-              <p style={{ color: '#aaa', fontSize: '0.9rem' }}>尚無分期紀錄，可在記帳頁選信用卡帳戶後建立</p>
-            )}
-            {installments.map(inst => {
-              const { paid, remaining, remainingAmount } = getInstallmentProgress(inst)
-              const pct = Math.round((paid / inst.total_months) * 100)
-              const isDone = remaining === 0
-              const accName = accounts.find(a => a.id === inst.account_id)?.name || ''
-              return (
-                <div key={inst.id} style={{ marginBottom: '1rem', padding: '0.75rem', background: isDone ? '#f0fff4' : '#fafafa', borderRadius: '8px', border: `1px solid ${isDone ? '#1D9E7544' : '#eee'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
-                    <div>
-                      <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{inst.name}</span>
-                      {accName && <span style={{ fontSize: '0.78rem', color: '#aaa', marginLeft: '6px' }}>{accName}</span>}
-                    </div>
-                    <button onClick={() => handleDeleteInstallment(inst.id)}
-                      style={{ background: 'none', border: 'none', color: '#ddd', cursor: 'pointer', fontSize: '1rem', padding: '0 0.2rem' }}>✕</button>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#666', marginBottom: '0.4rem' }}>
-                    <span>每月 <strong>${inst.monthly_amount.toLocaleString()}</strong></span>
-                    <span>{isDone ? '已繳清' : `剩 ${remaining} 期・$${remainingAmount.toLocaleString()}`}</span>
-                  </div>
-                  <div style={{ height: '5px', background: '#eee', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.5rem' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: isDone ? '#1D9E75' : '#534AB7', borderRadius: '3px' }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#aaa', marginBottom: isDone ? 0 : '0.5rem' }}>
-                    <span>{inst.start_month} 起・共 {inst.total_months} 期</span>
-                    <span>已繳 {paid} 期</span>
-                  </div>
-                  {!isDone && (
-                    <button onClick={() => handlePayInstallment(inst)}
-                      style={{ width: '100%', padding: '0.4rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.88rem' }}>
-                      本月繳款 ${inst.monthly_amount.toLocaleString()}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-
           </div>
         )}
       </div>
@@ -1081,6 +1035,89 @@ export default function Budget({ session }) {
       </div>
       </>}
 
+      {page === 'credit' && <>
+        <h2 style={{ marginBottom: '0.25rem' }}>信用卡</h2>
+        {message && <p style={{ color: message.includes('成功') || message.includes('建立') || message.includes('記錄') ? 'green' : 'red', marginTop: '0.25rem' }}>{message}</p>}
+
+        {/* 月份切換 */}
+        <div className="month-nav">
+          <button className="budget-toggle" style={{ width: 'auto', padding: '0.3rem 0.9rem', fontSize: '1.2rem', color: '#333' }} onClick={() => changeMonth(-1)}>‹</button>
+          <h2>{monthLabel}</h2>
+          <button className="budget-toggle" style={{ width: 'auto', padding: '0.3rem 0.9rem', fontSize: '1.2rem', color: '#333' }} onClick={() => changeMonth(1)}>›</button>
+        </div>
+
+        {/* 信用卡帳戶卡片 */}
+        {creditAccounts.length === 0 ? (
+          <p style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '1rem' }}>尚無信用卡帳戶，可至設定 → 帳戶管理新增</p>
+        ) : (
+          <div className="account-cards" style={{ marginBottom: '1rem' }}>
+            {creditAccounts.map(a => (
+              <div key={a.id} className="account-card" style={{ background: '#D85A3018', border: '1.5px solid #D85A30' }}>
+                <div className="account-card-label">
+                  {a.name}
+                  <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#D85A30', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>卡</span>
+                  {a.household_id && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#534AB7', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>共</span>}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>待繳</div>
+                <div className="account-card-balance" style={{ color: '#D85A30' }}>${parseFloat(a.balance).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 本月摘要 */}
+        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
+          <div style={{ flex: 1, background: '#fff5f2', border: '1px solid #D85A3033', borderRadius: '10px', padding: '0.85rem 0.75rem' }}>
+            <div style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.25rem' }}>本月刷卡支出</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#D85A30' }}>${creditExpense.toLocaleString()}</div>
+          </div>
+          <div style={{ flex: 1, background: '#f0eeff', border: '1px solid #534AB733', borderRadius: '10px', padding: '0.85rem 0.75rem' }}>
+            <div style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.25rem' }}>本月應繳分期款</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#534AB7' }}>${monthlyDue.toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* 分期列表 */}
+        <h3 style={{ margin: '0 0 0.75rem' }}>分期管理</h3>
+        {installments.length === 0 ? (
+          <p style={{ color: '#aaa', fontSize: '0.9rem' }}>尚無分期紀錄，可在記帳頁選信用卡帳戶後建立</p>
+        ) : installments.map(inst => {
+          const { paid, remaining, remainingAmount } = getInstallmentProgress(inst)
+          const pct = Math.round((paid / inst.total_months) * 100)
+          const isDone = remaining === 0
+          const accName = accounts.find(a => a.id === inst.account_id)?.name || ''
+          return (
+            <div key={inst.id} style={{ marginBottom: '1rem', padding: '0.75rem', background: isDone ? '#f0fff4' : '#fafafa', borderRadius: '8px', border: `1px solid ${isDone ? '#1D9E7544' : '#eee'}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
+                <div>
+                  <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{inst.name}</span>
+                  {accName && <span style={{ fontSize: '0.78rem', color: '#aaa', marginLeft: '6px' }}>{accName}</span>}
+                </div>
+                <button onClick={() => handleDeleteInstallment(inst.id)}
+                  style={{ background: 'none', border: 'none', color: '#ddd', cursor: 'pointer', fontSize: '1rem', padding: '0 0.2rem' }}>✕</button>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#666', marginBottom: '0.4rem' }}>
+                <span>每月 <strong>${inst.monthly_amount.toLocaleString()}</strong></span>
+                <span>{isDone ? '已繳清' : `剩 ${remaining} 期・$${remainingAmount.toLocaleString()}`}</span>
+              </div>
+              <div style={{ height: '5px', background: '#eee', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: isDone ? '#1D9E75' : '#534AB7', borderRadius: '3px' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#aaa', marginBottom: isDone ? 0 : '0.5rem' }}>
+                <span>{inst.start_month} 起・共 {inst.total_months} 期</span>
+                <span>已繳 {paid} 期</span>
+              </div>
+              {!isDone && (
+                <button onClick={() => handlePayInstallment(inst)}
+                  style={{ width: '100%', padding: '0.4rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.88rem' }}>
+                  本月繳款 ${inst.monthly_amount.toLocaleString()}
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </>}
+
       {page === 'main' && <>
 
       {/* 記帳 / 轉帳 切換 */}
@@ -1230,6 +1267,10 @@ export default function Budget({ session }) {
         <button onClick={() => setPage('main')}
           style={{ flex: 1, padding: '0.85rem 0', fontSize: '0.9rem', border: 'none', background: 'none', cursor: 'pointer', fontWeight: page === 'main' ? 700 : 400, color: page === 'main' ? '#534AB7' : '#888', borderTop: page === 'main' ? '2px solid #534AB7' : '2px solid transparent' }}>
           記帳
+        </button>
+        <button onClick={() => setPage('credit')}
+          style={{ flex: 1, padding: '0.85rem 0', fontSize: '0.9rem', border: 'none', background: 'none', cursor: 'pointer', fontWeight: page === 'credit' ? 700 : 400, color: page === 'credit' ? '#D85A30' : '#888', borderTop: page === 'credit' ? '2px solid #D85A30' : '2px solid transparent' }}>
+          信用卡
         </button>
         <button onClick={() => setPage('settings')}
           style={{ flex: 1, padding: '0.85rem 0', fontSize: '0.9rem', border: 'none', background: 'none', cursor: 'pointer', fontWeight: page === 'settings' ? 700 : 400, color: page === 'settings' ? '#534AB7' : '#888', borderTop: page === 'settings' ? '2px solid #534AB7' : '2px solid transparent' }}>

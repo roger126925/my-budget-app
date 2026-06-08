@@ -57,8 +57,8 @@ src/
 ## 目前功能
 
 - Email + 密碼 登入 / 註冊（Supabase Auth）
-- 底部導航列 — 「記帳」/ 「設定」兩頁切換
-- 帳戶餘額卡片顯示（新增/編輯/刪除交易時自動更新）
+- 底部導航列 — 「記帳」/ 「信用卡」/ 「設定」三頁切換
+- 帳戶餘額卡片顯示（一般帳戶；新增/編輯/刪除交易時自動更新）
 - 新增 / 編輯收支（選帳戶、分類、金額、日期、備註）
 - 刪除交易
 - 帳戶間轉帳
@@ -80,11 +80,18 @@ src/
 - [ ] 週期性收支（固定每月自動建立交易）
 - [ ] 常用 EMOJI 無法點擊（分類管理頁）
 - [ ] 抑制 Google 翻譯彈出通知
+- [ ] 可調色盤
+- [ ] **信用卡獨立頁籤**：底部導航新增「信用卡」（記帳 / 信用卡 / 設定）；記帳頁帳戶卡片只顯示一般帳戶；信用卡頁顯示：
+  - 各信用卡帳戶卡片（待繳金額）
+  - 本月信用卡總支出（當月 credit 帳戶的 expense 交易合計）
+  - 本月應繳分期款合計（進行中的 installments 的 monthly_amount 加總，限本月在 start_month 到結束期間內）
+  - 各分期計畫進度與「本月繳款」按鈕（從設定頁移入）
 
 ## 已知 Bug
 
-- [ ] **分期建立後信用卡待繳未更新**：`handleSubmit()` 分期路徑缺少 `accounts.update`，信用卡「待繳」金額不會增加。修法：insert 成功後加上餘額更新 + `fetchAccountsAndCategories()`
-- [ ] **calcStartMonth 邊界條件**：條件 `day <= billingDay` 應改為 `day < billingDay`，使刷卡日等於出帳日時正確推入下個月
+- [x] **分期建立後信用卡待繳未更新**：`handleSubmit()` 補上 `accounts.update`，建立分期後待繳 +total_amount（已修復）
+- [x] **calcStartMonth 邊界條件**：`day <= billingDay` 改為 `day < billingDay`，刷卡日等於出帳日時正確推入下個月（已修復）
+- [x] **本月繳款待繳反增**：`handlePayInstallment()` 改為 `balance - monthly_amount`，type 改為 `'income'`，繳款後待繳正確減少（已修復）
 
 ## 部署
 
