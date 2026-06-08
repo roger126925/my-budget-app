@@ -512,7 +512,7 @@ export default function Budget({ session }) {
       account_id: inst.account_id,
       category_id: inst.category_id || null,
       amount: inst.monthly_amount,
-      type: 'expense',
+      type: 'income',
       note: `${inst.name} 分期款`,
       txn_date: txnDate,
     }])
@@ -520,7 +520,7 @@ export default function Budget({ session }) {
     if (account) {
       const isCredit = account.account_type === 'credit'
       const newBal = isCredit
-        ? parseFloat(account.balance) + inst.monthly_amount
+        ? parseFloat(account.balance) - inst.monthly_amount
         : parseFloat(account.balance) - inst.monthly_amount
       await supabase.from('accounts').update({ balance: newBal }).eq('id', inst.account_id)
       fetchAccountsAndCategories()
