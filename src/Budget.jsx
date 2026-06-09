@@ -292,7 +292,12 @@ export default function Budget({ session }) {
         note: '',
       }])
       if (error) { setMessage(error.message); setLoading(false); return }
-      const newBalance = parseFloat(selectedAcc.balance) + amount
+      const [sy, sm] = startMonth.split('-').map(Number)
+      const n = new Date()
+      const elapsed = (n.getFullYear() - sy) * 12 + (n.getMonth() + 1 - sm)
+      const alreadyPaid = Math.max(0, Math.min(elapsed, months))
+      const outstandingAmount = (months - alreadyPaid) * monthly
+      const newBalance = parseFloat(selectedAcc.balance) + outstandingAmount
       await supabase.from('accounts').update({ balance: newBalance }).eq('id', form.account_id)
       setMessage(`分期已建立！${startMonth} 起，每月 $${monthly.toLocaleString()}，共 ${months} 期`)
       setForm({ ...form, amount: '', note: '' })
