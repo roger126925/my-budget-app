@@ -280,6 +280,10 @@ export default function Budget({ session }) {
       const monthly = Math.round(amount / months * 100) / 100
       const startMonth = calcStartMonth(form.txn_date, selectedAcc.billing_day)
       const instName = form.note || categories.find(c => c.id === form.category_id)?.name || '分期購買'
+      const [ssy, ssm] = startMonth.split('-').map(Number)
+      const prevM = ssm === 1 ? 12 : ssm - 1
+      const prevY = ssm === 1 ? ssy - 1 : ssy
+      const initLastAdded = `${prevY}-${String(prevM).padStart(2, '0')}`
       const { error } = await supabase.from('installments').insert([{
         user_id: session.user.id,
         account_id: form.account_id,
@@ -290,15 +294,10 @@ export default function Budget({ session }) {
         total_months: months,
         start_month: startMonth,
         note: '',
+        last_added_month: initLastAdded,
+        pending_amount: 0,
       }])
       if (error) { setMessage(error.message); setLoading(false); return }
-      const [sy, sm] = startMonth.split('-').map(Number)
-      const n = new Date()
-      const elapsed = (n.getFullYear() - sy) * 12 + (n.getMonth() + 1 - sm)
-      const alreadyPaid = Math.max(0, Math.min(elapsed, months))
-      const outstandingAmount = (months - alreadyPaid) * monthly
-      const newBalance = parseFloat(selectedAcc.balance) + outstandingAmount
-      await supabase.from('accounts').update({ balance: newBalance }).eq('id', form.account_id)
       setMessage(`分期已建立！${startMonth} 起，每月 $${monthly.toLocaleString()}，共 ${months} 期`)
       setForm({ ...form, amount: '', note: '' })
       setIsInstallment(false)
@@ -500,7 +499,66 @@ export default function Budget({ session }) {
 
   async function fetchInstallments() {
     const { data } = await supabase.from('installments').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
-    setInstallments(data || [])
+    const fetched = data || []
+    await autoAddInstallmentCharges(fetched)
+    const { data: refreshed } = await supabase.from('installments').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
+    setInstallments(refreshed || [])
+  }
+
+  async function autoAddInstallmentCharges(fetchedInstallments) {
+    const now = new Date()
+    const cy = now.getFullYear()
+    const cm = now.getMonth() + 1
+    const currentMonth = `${cy}-${String(cm).padStart(2, '0')}`
+    const balanceDeltas = {}
+
+    for (const inst of fetchedInstallments) {
+      const [sy, sm] = inst.start_month.split('-').map(Number)
+
+      // 舊資料遷移：last_added_month 尚未初始化
+      if (inst.last_added_month == null) {
+        const elapsed = (cy - sy) * 12 + (cm - sm)
+        const paid = Math.max(0, Math.min(elapsed, inst.total_months))
+        const pendingAmt = (inst.total_months - paid) * inst.monthly_amount
+        await supabase.from('installments')
+          .update({ last_added_month: currentMonth, pending_amount: pendingAmt })
+          .eq('id', inst.id)
+        continue
+      }
+
+      const [ly, lm] = inst.last_added_month.split('-').map(Number)
+      let y = ly, m = lm + 1
+      if (m > 12) { m = 1; y++ }
+
+      const monthsToAdd = []
+      while (y < cy || (y === cy && m <= cm)) {
+        const elapsed = (y - sy) * 12 + (m - sm)
+        if (elapsed >= 0 && elapsed < inst.total_months) {
+          monthsToAdd.push({ y, m })
+        }
+        m++
+        if (m > 12) { m = 1; y++ }
+      }
+
+      if (monthsToAdd.length === 0) continue
+
+      const totalToAdd = monthsToAdd.length * inst.monthly_amount
+      const last = monthsToAdd[monthsToAdd.length - 1]
+      const newLastAdded = `${last.y}-${String(last.m).padStart(2, '0')}`
+
+      await supabase.from('installments')
+        .update({ last_added_month: newLastAdded, pending_amount: (inst.pending_amount || 0) + totalToAdd })
+        .eq('id', inst.id)
+
+      balanceDeltas[inst.account_id] = (balanceDeltas[inst.account_id] || 0) + totalToAdd
+    }
+
+    for (const [accountId, delta] of Object.entries(balanceDeltas)) {
+      const { data: acc } = await supabase.from('accounts').select('balance').eq('id', accountId).single()
+      if (acc) await supabase.from('accounts').update({ balance: parseFloat(acc.balance) + delta }).eq('id', accountId)
+    }
+
+    if (Object.keys(balanceDeltas).length > 0) fetchAccountsAndCategories()
   }
 
   async function handleDeleteInstallment(id) {
@@ -510,28 +568,26 @@ export default function Budget({ session }) {
     fetchInstallments()
   }
 
-  async function handlePayInstallment(inst) {
-    const account = accounts.find(a => a.id === inst.account_id)
+  async function handleSettleInstallment(inst) {
+    const pendingAmt = inst.pending_amount || 0
+    if (pendingAmt <= 0) return
     const txnDate = new Date().toISOString().split('T')[0]
     const { error } = await supabase.from('transactions').insert([{
       user_id: session.user.id,
       account_id: inst.account_id,
       category_id: inst.category_id || null,
-      amount: inst.monthly_amount,
+      amount: pendingAmt,
       type: 'income',
-      note: `${inst.name} 分期款`,
+      note: `${inst.name} 結清`,
       txn_date: txnDate,
     }])
     if (error) { setMessage(error.message); return }
-    if (account) {
-      const isCredit = account.account_type === 'credit'
-      const newBal = isCredit
-        ? parseFloat(account.balance) - inst.monthly_amount
-        : parseFloat(account.balance) - inst.monthly_amount
-      await supabase.from('accounts').update({ balance: newBal }).eq('id', inst.account_id)
-      fetchAccountsAndCategories()
-    }
-    setMessage(`已記錄 ${inst.name} 本期款 $${inst.monthly_amount.toLocaleString()}`)
+    const { data: acc } = await supabase.from('accounts').select('balance').eq('id', inst.account_id).single()
+    if (acc) await supabase.from('accounts').update({ balance: parseFloat(acc.balance) - pendingAmt }).eq('id', inst.account_id)
+    await supabase.from('installments').update({ pending_amount: 0 }).eq('id', inst.id)
+    setMessage(`已結清 ${inst.name} 待繳 $${pendingAmt.toLocaleString()}`)
+    fetchAccountsAndCategories()
+    fetchInstallments()
     fetchTransactions()
   }
 
@@ -605,6 +661,7 @@ export default function Budget({ session }) {
   const monthlyDue = installments
     .filter(inst => getInstallmentProgress(inst).remaining > 0)
     .reduce((sum, inst) => sum + inst.monthly_amount, 0)
+  const totalPending = installments.reduce((sum, inst) => sum + (inst.pending_amount || 0), 0)
 
   const filteredTransactions = transactions.filter(t =>
     (!filterCategory || t.category_id === filterCategory) &&
@@ -1140,8 +1197,8 @@ export default function Budget({ session }) {
             <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#D85A30' }}>${creditExpense.toLocaleString()}</div>
           </div>
           <div style={{ flex: 1, background: '#f0eeff', border: '1px solid #534AB733', borderRadius: '10px', padding: '0.85rem 0.75rem' }}>
-            <div style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.25rem' }}>本月應繳分期款</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#534AB7' }}>${monthlyDue.toLocaleString()}</div>
+            <div style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.25rem' }}>分期總待結清</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: totalPending > 0 ? '#D85A30' : '#1D9E75' }}>${totalPending.toLocaleString()}</div>
           </div>
         </div>
 
@@ -1150,9 +1207,10 @@ export default function Budget({ session }) {
         {installments.length === 0 ? (
           <p style={{ color: '#aaa', fontSize: '0.9rem' }}>尚無分期紀錄，可在上方刷卡記帳選「分期」後建立</p>
         ) : installments.map(inst => {
-          const { paid, remaining, remainingAmount } = getInstallmentProgress(inst)
+          const { paid, remaining } = getInstallmentProgress(inst)
           const pct = Math.round((paid / inst.total_months) * 100)
-          const isDone = remaining === 0
+          const pendingAmt = inst.pending_amount || 0
+          const isDone = remaining === 0 && pendingAmt === 0
           const accName = accounts.find(a => a.id === inst.account_id)?.name || ''
           return (
             <div key={inst.id} style={{ marginBottom: '1rem', padding: '0.75rem', background: isDone ? '#f0fff4' : '#fafafa', borderRadius: '8px', border: `1px solid ${isDone ? '#1D9E7544' : '#eee'}` }}>
@@ -1166,19 +1224,19 @@ export default function Budget({ session }) {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#666', marginBottom: '0.4rem' }}>
                 <span>每月 <strong>${inst.monthly_amount.toLocaleString()}</strong></span>
-                <span>{isDone ? '已繳清' : `剩 ${remaining} 期・$${remainingAmount.toLocaleString()}`}</span>
+                <span>{isDone ? '已繳清' : `剩 ${remaining} 期`}</span>
               </div>
               <div style={{ height: '5px', background: '#eee', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.5rem' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: isDone ? '#1D9E75' : '#534AB7', borderRadius: '3px' }} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#aaa', marginBottom: isDone ? 0 : '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#aaa', marginBottom: (isDone && pendingAmt === 0) ? 0 : '0.5rem' }}>
                 <span>{inst.start_month} 起・共 {inst.total_months} 期</span>
                 <span>已繳 {paid} 期</span>
               </div>
-              {!isDone && (
-                <button onClick={() => handlePayInstallment(inst)}
-                  style={{ width: '100%', padding: '0.4rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.88rem' }}>
-                  本月繳款 ${inst.monthly_amount.toLocaleString()}
+              {pendingAmt > 0 && (
+                <button onClick={() => handleSettleInstallment(inst)}
+                  style={{ width: '100%', padding: '0.4rem', background: '#D85A30', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600 }}>
+                  已結清・待繳 ${pendingAmt.toLocaleString()}
                 </button>
               )}
             </div>
