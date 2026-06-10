@@ -679,6 +679,26 @@ export default function Budget({ session }) {
     .reduce((sum, inst) => sum + inst.monthly_amount, 0)
   const totalPending = installments.reduce((sum, inst) => sum + (inst.pending_amount || 0), 0)
 
+  // 某張卡在 selectedMonth 的分期應繳（該月落在分期區間內才算）
+  function cardInstallmentDue(cardId) {
+    const [vy, vm] = selectedMonth.split('-').map(Number)
+    return installments
+      .filter(inst => inst.account_id === cardId)
+      .filter(inst => {
+        const [sy, sm] = inst.start_month.split('-').map(Number)
+        const elapsed = (vy - sy) * 12 + (vm - sm)
+        return elapsed >= 0 && elapsed < inst.total_months
+      })
+      .reduce((sum, inst) => sum + inst.monthly_amount, 0)
+  }
+  // 某張卡 selectedMonth 的帳單 = 本月刷卡（單筆支出）+ 本月分期那一期
+  function cardStatement(cardId) {
+    const oneTime = transactions
+      .filter(t => t.account_id === cardId && t.type === 'expense')
+      .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+    return oneTime + cardInstallmentDue(cardId)
+  }
+
   const filteredTransactions = transactions.filter(t =>
     (!filterCategory || t.category_id === filterCategory) &&
     (!filterAccount || t.account_id === filterAccount)
@@ -1137,8 +1157,9 @@ export default function Budget({ session }) {
                   <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#D85A30', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>卡</span>
                   {a.household_id && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#534AB7', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>共</span>}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>待繳</div>
-                <div className="account-card-balance" style={{ color: '#D85A30' }}>${parseFloat(a.balance).toLocaleString()}</div>
+                <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>本月帳單</div>
+                <div className="account-card-balance" style={{ color: '#D85A30' }}>${cardStatement(a.id).toLocaleString()}</div>
+                <div style={{ fontSize: '0.68rem', color: '#bbb', marginTop: '2px' }}>累積待繳 ${parseFloat(a.balance).toLocaleString()}</div>
               </div>
             ))}
           </div>
