@@ -214,3 +214,47 @@
 - 記帳頁表單帳戶選單改為只顯示一般帳戶（`generalAccounts`），移除信用卡/分期相關 UI
 - 信用卡帳戶管理保留於設定頁，不在信用卡頁重複
 - 分期提示文字更新：改為引導使用者在「刷卡記帳」選分期
+
+---
+
+## 2026-06-09（分期待繳重構）
+
+### Supabase 資料表異動
+- `installments` 新增兩欄：
+  - `last_added_month text`：上次 auto-add 到哪個月（NULL 代表舊資料）
+  - `pending_amount numeric DEFAULT 0`：已自動加入待繳但尚未結清的金額
+- SQL：`ALTER TABLE installments ADD COLUMN IF NOT EXISTS last_added_month text, ADD COLUMN IF NOT EXISTS pending_amount numeric DEFAULT 0;`
+
+### Bug 修復：從中間期數開始記帳仍顯示總額
+- 問題根源：舊程式碼建立分期時直接把 `total_amount` 加進信用卡 balance；對於歷史分期（start_month 在過去），使用者已在現實中繳過前面幾期，但 app 仍顯示全額
+- 第一版修法（2026-06-09）：建立時只加「剩餘期數金額」（`outstandingAmount`）—— 已廢棄，被以下設計取代
+
+### 新功能：分期 auto-add + 已結清
+
+**設計概念**
+- 建立分期時完全不動 balance；`last_added_month = currentMonth - 1`（本月前一個月）
+- 每次開 App（`fetchInstallments`）自動執行 `autoAddInstallmentCharges`：
+  - 從 `last_added_month + 1` 到當前月份，逐月判斷是否在分期範圍內（`elapsed >= 0 && elapsed < total_months`），符合則將當月金額加進 `pending_amount` 和 `account.balance`
+  - 只加**本月及之後**的期數；之前的月份假設使用者已在現實中繳過，不重複加
+- 「已結清」按鈕：一次清掉所有 `pending_amount`（建立 income 交易 + balance -= pending_amount + pending_amount = 0）
+
+**舊資料遷移（`last_added_month == null`）**
+- 查出該分期名稱對應的舊繳款交易（note 含「分期款」或「結清」），計算 `paidSum`
+- 將 `total_amount - paidSum`（舊程式碼淨貢獻）從 balance 扣除
+- 設 `last_added_month = currentMonth - 1`、`pending_amount = 0`，後續 auto-add 補上本月
+
+**UI 變化**
+- 分期卡片：移除「本月繳款」，改為橘紅色「已結清・待繳 $X」（僅 `pending_amount > 0` 時顯示）
+- 信用卡頁摘要：「本月應繳分期款」改為「分期總待結清」（`totalPending`，有待繳時橘紅）
+
+---
+
+## 2026-06-10（Bug 修復：auto-add 邏輯修正）
+
+### Bug 修復：auto-add 仍將所有歷史期數加入待繳
+- 問題：`initLastAdded` 設為 `startMonth - 1`，導致 auto-add 從 startMonth 跑到現在，把所有歷史期數一次全部加進 balance
+- 修法：`initLastAdded = currentMonth - 1`，確保只從本月起算，過去期數不重加
+
+### Bug 修復：舊資料遷移 balance 不準確
+- 問題：舊資料遷移只用時間推算 `pending_amount = remaining * monthly`，但 balance 是舊程式碼加的 `total_amount`，兩者對不上，「已結清」後 balance 仍有殘值
+- 修法：遷移時查出舊繳款交易算 `paidSum`，將 `total_amount - paidSum` 從 balance 扣除，再由 auto-add 補上本月金額；migration 與 auto-add 同一迴圈執行，不需第二次 fetch

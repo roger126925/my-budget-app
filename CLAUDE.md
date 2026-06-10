@@ -36,7 +36,7 @@ src/
 | `budgets` | id, user_id, category_id, month, amount | 每月分類預算，unique(user_id, category_id, month) |
 | `households` | id, name, invite_code, created_by, monthly_budget | 共同帳戶群組（含月預算） |
 | `household_members` | household_id, user_id | 群組成員，RLS 只能看自己的記錄 |
-| `installments` | id, user_id, account_id, category_id, name, total_amount, monthly_amount, total_months, start_month, note | 信用卡分期計畫 |
+| `installments` | id, user_id, account_id, category_id, name, total_amount, monthly_amount, total_months, start_month, note, last_added_month, pending_amount | 信用卡分期計畫；last_added_month 記錄上次 auto-add 到哪個月；pending_amount 是已加入待繳但尚未結清的金額 |
 
 ## 頁面結構
 
@@ -72,8 +72,16 @@ src/
 - 共同帳戶（household）— 建立群組 / 邀請碼加入 / 月預算 / 本月已花、剩餘、帳戶餘額摘要、進度條
 - 資料管理 — 依月份檢視交易、單筆刪除（自動修正帳戶餘額）、清除全部交易
 - 信用卡帳戶 — 支出增加待繳、轉入視為繳費、橘紅「卡」標籤 + 「待繳 $X」
-- 信用卡分期 — 記帳表單選信用卡後切換單筆 / 分期，依出帳日自動計算首期月份；信用卡頁追蹤進度、本月繳款、刪除
-- 信用卡獨立頁籤 — 刷卡記帳表單（固定支出、單筆/分期）、信用卡帳戶卡片、本月刷卡支出、本月應繳分期款合計、分期進度列表
+- 信用卡分期 — 記帳表單選信用卡後切換單筆 / 分期，依出帳日自動計算首期月份；信用卡頁追蹤進度、刪除
+- 信用卡獨立頁籤 — 刷卡記帳表單（固定支出、單筆/分期）、信用卡帳戶卡片、本月刷卡支出、分期總待結清、分期進度列表
+- **分期 auto-add**：每次開 App 自動偵測新出帳月份，將當月分期金額加入信用卡待繳（`pending_amount`）；只加**本月及之後**，之前的月份假設使用者已在現實繳過。「已結清」按鈕一次清掉所有累積的 pending_amount。
+
+### 分期待繳邏輯（重要）
+
+- **建立分期**：`last_added_month = currentMonth - 1`（不動 account.balance）；auto-add 在同次 `fetchInstallments` 立即跑，只加本月起的期數。
+- **auto-add**（`autoAddInstallmentCharges`）：從 `last_added_month + 1` 到目前月份，逐月判斷 `elapsed >= 0 && elapsed < total_months`，符合才加到 `pending_amount` 和 `account.balance`。
+- **舊資料遷移**（`last_added_month == null`）：查出該分期名稱相關的舊繳款交易，算出 `paidSum`；將 `total_amount - paidSum`（舊程式碼加進去的淨餘）從 balance 扣除；然後以 `last_added_month = currentMonth - 1` 重新走 auto-add 流程，只加本月。
+- **已結清**：transaction type = income，balance -= pending_amount，pending_amount = 0。
 
 ## 待開發
 
@@ -86,9 +94,10 @@ src/
 
 ## 已知 Bug
 
-- [x] **分期建立後信用卡待繳未更新**：`handleSubmit()` 補上 `accounts.update`，建立分期後待繳 +total_amount（已修復）
+- [x] **分期建立後信用卡待繳未更新**：改由 auto-add 處理，建立時不直接動 balance（已修復）
 - [x] **calcStartMonth 邊界條件**：`day <= billingDay` 改為 `day < billingDay`，刷卡日等於出帳日時正確推入下個月（已修復）
-- [x] **本月繳款待繳反增**：`handlePayInstallment()` 改為 `balance - monthly_amount`，type 改為 `'income'`，繳款後待繳正確減少（已修復）
+- [x] **本月繳款待繳反增**：改為「已結清」按鈕，一次清掉 pending_amount，type 改為 `'income'`（已修復）
+- [x] **從中間期數開始記帳顯示總額**：auto-add 的 `last_added_month` 初始設為 `currentMonth - 1`（非 `startMonth - 1`），確保只加本月起的期數，之前視為已在現實繳過（已修復）
 
 ## 部署
 

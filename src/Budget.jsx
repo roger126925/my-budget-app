@@ -280,9 +280,10 @@ export default function Budget({ session }) {
       const monthly = Math.round(amount / months * 100) / 100
       const startMonth = calcStartMonth(form.txn_date, selectedAcc.billing_day)
       const instName = form.note || categories.find(c => c.id === form.category_id)?.name || '分期購買'
-      const [ssy, ssm] = startMonth.split('-').map(Number)
-      const prevM = ssm === 1 ? 12 : ssm - 1
-      const prevY = ssm === 1 ? ssy - 1 : ssy
+      const nowD = new Date()
+      const curY = nowD.getFullYear(), curM = nowD.getMonth() + 1
+      const prevM = curM === 1 ? 12 : curM - 1
+      const prevY = curM === 1 ? curY - 1 : curY
       const initLastAdded = `${prevY}-${String(prevM).padStart(2, '0')}`
       const { error } = await supabase.from('installments').insert([{
         user_id: session.user.id,
@@ -509,24 +510,39 @@ export default function Budget({ session }) {
     const now = new Date()
     const cy = now.getFullYear()
     const cm = now.getMonth() + 1
-    const currentMonth = `${cy}-${String(cm).padStart(2, '0')}`
+    const prevM = cm === 1 ? 12 : cm - 1
+    const prevY = cm === 1 ? cy - 1 : cy
+    const prevMonthStr = `${prevY}-${String(prevM).padStart(2, '0')}`
     const balanceDeltas = {}
 
-    for (const inst of fetchedInstallments) {
+    for (let inst of fetchedInstallments) {
       const [sy, sm] = inst.start_month.split('-').map(Number)
+      let effectiveLastAdded = inst.last_added_month
+      let effectivePending = inst.pending_amount || 0
 
-      // 舊資料遷移：last_added_month 尚未初始化
-      if (inst.last_added_month == null) {
-        const elapsed = (cy - sy) * 12 + (cm - sm)
-        const paid = Math.max(0, Math.min(elapsed, inst.total_months))
-        const pendingAmt = (inst.total_months - paid) * inst.monthly_amount
+      // 舊資料遷移：查出舊繳款總額，扣掉舊程式碼加進去的 total_amount
+      if (effectiveLastAdded == null) {
+        const { data: oldTxns } = await supabase.from('transactions')
+          .select('amount, note')
+          .eq('account_id', inst.account_id)
+          .eq('type', 'income')
+        const paidSum = (oldTxns || [])
+          .filter(t => t.note && (t.note.includes(`${inst.name} 分期款`) || t.note.includes(`${inst.name} 結清`)))
+          .reduce((s, t) => s + parseFloat(t.amount), 0)
+        // 舊程式碼加了 total_amount，扣掉已繳後的淨貢獻需歸零
+        const netOldContribution = inst.total_amount - paidSum
+        if (netOldContribution !== 0) {
+          balanceDeltas[inst.account_id] = (balanceDeltas[inst.account_id] || 0) - netOldContribution
+        }
         await supabase.from('installments')
-          .update({ last_added_month: currentMonth, pending_amount: pendingAmt })
+          .update({ last_added_month: prevMonthStr, pending_amount: 0 })
           .eq('id', inst.id)
-        continue
+        effectiveLastAdded = prevMonthStr
+        effectivePending = 0
       }
 
-      const [ly, lm] = inst.last_added_month.split('-').map(Number)
+      // 計算本月及以前有哪些月份還沒 auto-add
+      const [ly, lm] = effectiveLastAdded.split('-').map(Number)
       let y = ly, m = lm + 1
       if (m > 12) { m = 1; y++ }
 
@@ -547,7 +563,7 @@ export default function Budget({ session }) {
       const newLastAdded = `${last.y}-${String(last.m).padStart(2, '0')}`
 
       await supabase.from('installments')
-        .update({ last_added_month: newLastAdded, pending_amount: (inst.pending_amount || 0) + totalToAdd })
+        .update({ last_added_month: newLastAdded, pending_amount: effectivePending + totalToAdd })
         .eq('id', inst.id)
 
       balanceDeltas[inst.account_id] = (balanceDeltas[inst.account_id] || 0) + totalToAdd
