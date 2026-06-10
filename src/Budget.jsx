@@ -1213,8 +1213,9 @@ export default function Budget({ session }) {
             <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#D85A30' }}>${creditExpense.toLocaleString()}</div>
           </div>
           <div style={{ flex: 1, background: '#f0eeff', border: '1px solid #534AB733', borderRadius: '10px', padding: '0.85rem 0.75rem' }}>
-            <div style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.25rem' }}>分期總待結清</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: totalPending > 0 ? '#D85A30' : '#1D9E75' }}>${totalPending.toLocaleString()}</div>
+            <div style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.25rem' }}>本月分期應繳</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#534AB7' }}>${monthlyDue.toLocaleString()}</div>
+            {totalPending > 0 && <div style={{ fontSize: '0.72rem', color: '#D85A30', marginTop: '2px' }}>累積待結清 ${totalPending.toLocaleString()}</div>}
           </div>
         </div>
 
@@ -1240,7 +1241,9 @@ export default function Budget({ session }) {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#666', marginBottom: '0.4rem' }}>
                 <span>每月 <strong>${inst.monthly_amount.toLocaleString()}</strong></span>
-                <span>{isDone ? '已繳清' : `剩 ${remaining} 期`}</span>
+                <span style={{ color: isDone ? '#1D9E75' : remaining > 0 ? '#534AB7' : '#D85A30', fontWeight: 600 }}>
+                  {isDone ? '已繳清' : `剩 ${remaining} 期`}
+                </span>
               </div>
               <div style={{ height: '5px', background: '#eee', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.5rem' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: isDone ? '#1D9E75' : '#534AB7', borderRadius: '3px' }} />
