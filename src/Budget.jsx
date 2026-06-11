@@ -100,6 +100,7 @@ export default function Budget({ session }) {
   const [accounts, setAccounts] = useState([])
   const [categories, setCategories] = useState([])
   const [transactions, setTransactions] = useState([])
+  const [prevMonthTxns, setPrevMonthTxns] = useState([])
 
   const [form, setForm] = useState({
     account_id: '', category_id: '', amount: '', type: 'expense',
@@ -212,6 +213,18 @@ export default function Budget({ session }) {
       .gte('txn_date', start).lte('txn_date', end)
       .order('txn_date', { ascending: false })
     setTransactions(txn || [])
+
+    // 上個月的支出（信用卡帳單週期用：上月出帳日後的刷卡屬本月帳單）
+    const prev = new Date(parseInt(year), parseInt(month) - 2, 1)
+    const py = prev.getFullYear()
+    const pm = String(prev.getMonth() + 1).padStart(2, '0')
+    const prevStart = `${py}-${pm}-01`
+    const prevEnd = `${py}-${pm}-${String(new Date(py, prev.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
+    const { data: prevTxn } = await supabase
+      .from('transactions')
+      .select('account_id, amount, type, txn_date')
+      .gte('txn_date', prevStart).lte('txn_date', prevEnd)
+    setPrevMonthTxns(prevTxn || [])
   }
 
   async function fetchBudgets() {
@@ -691,12 +704,27 @@ export default function Budget({ session }) {
       })
       .reduce((sum, inst) => sum + inst.monthly_amount, 0)
   }
-  // 某張卡 selectedMonth 的帳單 = 本月刷卡（單筆支出）+ 本月分期那一期
+  // 某張卡 selectedMonth 的帳單 = 帳單週期內單筆刷卡 + 本月分期那一期
+  // 有出帳日：上月出帳日 ～ 本月出帳日前一天（與 calcStartMonth 同標準）；無出帳日：整個日曆月
   function cardStatement(cardId) {
-    const oneTime = transactions
-      .filter(t => t.account_id === cardId && t.type === 'expense')
+    const billingDay = accounts.find(a => a.id === cardId)?.billing_day
+    const sumExpense = (txns, dayFilter) => txns
+      .filter(t => t.account_id === cardId && t.type === 'expense' && dayFilter(Number(t.txn_date.split('-')[2])))
       .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+    const oneTime = !billingDay
+      ? sumExpense(transactions, () => true)
+      : sumExpense(prevMonthTxns, d => d >= billingDay) + sumExpense(transactions, d => d < billingDay)
     return oneTime + cardInstallmentDue(cardId)
+  }
+  // 帳單週期顯示文字，例：5/15～6/14
+  function cardCycleLabel(billingDay) {
+    if (!billingDay) return ''
+    const [vy, vm] = selectedMonth.split('-').map(Number)
+    const prev = new Date(vy, vm - 2, 1)
+    const prevM = prev.getMonth() + 1
+    const endM = billingDay === 1 ? prevM : vm
+    const endD = billingDay === 1 ? new Date(prev.getFullYear(), prevM, 0).getDate() : billingDay - 1
+    return `${prevM}/${billingDay}～${endM}/${endD}`
   }
 
   const filteredTransactions = transactions.filter(t =>
@@ -1157,7 +1185,7 @@ export default function Budget({ session }) {
                   <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#D85A30', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>卡</span>
                   {a.household_id && <span style={{ marginLeft: '4px', fontSize: '0.7rem', background: '#534AB7', color: '#fff', borderRadius: '4px', padding: '1px 4px' }}>共</span>}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>本月帳單</div>
+                <div style={{ fontSize: '0.72rem', color: '#999', marginBottom: '1px' }}>本月帳單{a.billing_day ? `（${cardCycleLabel(a.billing_day)}）` : ''}</div>
                 <div className="account-card-balance" style={{ color: '#D85A30' }}>${cardStatement(a.id).toLocaleString()}</div>
                 <div style={{ fontSize: '0.68rem', color: '#bbb', marginTop: '2px' }}>累積待繳 ${parseFloat(a.balance).toLocaleString()}</div>
               </div>
