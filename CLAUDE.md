@@ -30,29 +30,35 @@ src/
 
 | 表名 | 欄位 | 說明 |
 |------|------|------|
-| `accounts` | id, user_id, household_id, name, balance, color, account_type, billing_day | 帳戶，RLS 隔離（私人 or 共同）；account_type: general/credit；billing_day: 信用卡每月出帳日 |
+| `accounts` | id, user_id, household_id, name, balance, color, account_type, billing_day, payment_due_day | 帳戶，RLS 隔離（私人 or 共同）；account_type: general/credit；billing_day: 信用卡每月出帳日；payment_due_day: 繳款截止日（繳款提醒用） |
 | `categories` | id, user_id, name, icon, type | 分類，RLS 隔離（每人各自管理） |
 | `transactions` | id, user_id, account_id, category_id, amount, type, note, txn_date | 交易紀錄，RLS 隔離 |
 | `budgets` | id, user_id, category_id, month, amount | 每月分類預算，unique(user_id, category_id, month) |
 | `households` | id, name, invite_code, created_by, monthly_budget | 共同帳戶群組（含月預算） |
 | `household_members` | household_id, user_id | 群組成員，RLS 只能看自己的記錄 |
 | `installments` | id, user_id, account_id, category_id, name, total_amount, monthly_amount, total_months, start_month, note, last_added_month, pending_amount | 信用卡分期計畫；last_added_month 記錄上次 auto-add 到哪個月；pending_amount 是已加入待繳但尚未結清的金額 |
+| `recurrings` | id, user_id, account_id, category_id, amount, type, note, day_of_month, last_added_month | 週期性消費；每月 day_of_month 號自動建立交易，last_added_month 記錄補到哪個月 |
+| `templates` | id, user_id, name, account_id, category_id, amount, type, note | 快速記帳範本，主頁一鍵帶入 |
+
+> 新表與新欄位的 migration SQL 在 `supabase-migration-20260611.sql`，需在 Supabase Dashboard → SQL Editor 執行一次。
 
 ## 頁面結構
 
 ### 主頁（記帳）
+- 信用卡繳款提醒橫幅（7 天內到期）
 - 帳戶餘額卡片
-- 記帳 / 轉帳 表單（選信用卡帳戶後可切換單筆 / 分期）
+- 快速記帳範本 chips + 記帳 / 轉帳 表單（選信用卡帳戶後可切換單筆 / 分期、存範本）
 - 月份切換 + 圓餅圖
-- 篩選 + 交易列表
+- 關鍵字搜尋 + 篩選 + 交易列表
 
 ### 設定頁（設定）
 - 預算設定
 - 共同帳戶設定
 - 帳戶管理
 - 分類管理
-- 分期管理
-- 資料管理
+- 週期性消費
+- 年度統計
+- 資料管理（含匯入 CSV、完整備份 / 還原）
 
 ## 目前功能
 
@@ -75,6 +81,15 @@ src/
 - 信用卡分期 — 記帳表單選信用卡後切換單筆 / 分期，依出帳日自動計算首期月份；信用卡頁追蹤進度、刪除
 - 信用卡獨立頁籤 — 刷卡記帳表單（固定支出、單筆/分期）、信用卡帳戶卡片、本月刷卡支出、分期總待結清、分期進度列表
 - **分期 auto-add**：每次開 App 自動偵測新出帳月份，將當月分期金額加入信用卡待繳（`pending_amount`）；只加**本月及之後**，之前的月份假設使用者已在現實繳過。「已結清」按鈕一次清掉所有累積的 pending_amount。
+- 信用卡本月帳單依出帳日切分帳單週期（上月出帳日 ～ 本月出帳日前一天），卡片顯示週期區間
+- 信用卡繳款提醒 — 帳戶設定繳款截止日後，7 天內到期且有待繳金額時，主頁與信用卡頁顯示提醒橫幅（2 天內轉紅）
+- 週期性消費 — 設定頁管理（帳戶、分類、金額、每月幾號、備註）；每次開 App 自動補建 `last_added_month` 之後、日子已到的交易並調整餘額
+- 快速記帳範本 — 記帳表單「存範本」儲存常用消費，主頁 chips 一鍵帶入，× 刪除
+- 交易搜尋 — 主頁關鍵字搜尋備註 / 分類 / 帳戶，與篩選、匯出 CSV 連動
+- 年度統計 — 設定頁年份切換 + 每月支出/收入長條圖（純 SVG）+ 年支出/收入/結餘
+- 匯入 CSV — 資料管理頁，對應匯出格式（日期,類型,帳戶,分類,金額,備註），依名稱對應帳戶/分類，自動調整餘額，無法對應的列略過
+- 完整備份 / 還原 — 匯出全部資料 JSON；還原時以「新增」方式匯入（id 重新對應，共同帳戶轉為私人），不覆蓋現有資料
+- PWA — vite-plugin-pwa（autoUpdate），手機可加到主畫面
 
 ### 分期待繳邏輯（重要）
 
@@ -86,19 +101,11 @@ src/
 ## 待開發
 
 - [ ] 共同帳戶交易標記「誰付的」+ 自動計算每人應付金額
-- [ ] 週期性收支（固定每月自動建立交易）
 - [ ] 常用 EMOJI 無法點擊（分類管理頁）
 - [ ] 抑制 Google 翻譯彈出通知
 - [ ] 可調色盤
-- [ ] 週期性消費
-- [ ] 信用卡繳款提醒 — 出帳日 / 繳款截止日前在 App 內顯示提醒（可加 `payment_due_day` 欄位）
-- [ ] 年度統計 — 每月收支趨勢折線圖 / 長條圖，跨月比較消費變化
-- [ ] 交易搜尋 — 依備註關鍵字搜尋交易（目前只能依分類 / 帳戶篩選）
-- [ ] 快速記帳範本 — 常用消費（早餐、停車費等）一鍵帶入分類與金額
-- [ ] 匯入 CSV — 與匯出格式對應，方便從其他記帳 App 搬資料
-- [ ] 完整備份 / 還原 — 一鍵匯出全部資料（JSON），防 Supabase 免費方案資料遺失
-- [ ] PWA 支援 — manifest + service worker，手機可加到主畫面、像原生 App 開啟
 - [ ] 深色模式
+- [ ] 週期性消費編輯功能（目前只能刪除後重建）
 
 ## 已知 Bug
 

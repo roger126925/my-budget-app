@@ -92,6 +92,58 @@ function PieChart({ transactions }) {
   )
 }
 
+function YearBarChart({ txns }) {
+  const monthExpense = Array(12).fill(0)
+  const monthIncome = Array(12).fill(0)
+  txns.forEach(t => {
+    const m = Number(t.txn_date.split('-')[1]) - 1
+    if (t.type === 'expense') monthExpense[m] += parseFloat(t.amount)
+    else if (t.type === 'income') monthIncome[m] += parseFloat(t.amount)
+  })
+  const totalExpense = monthExpense.reduce((a, b) => a + b, 0)
+  const totalIncome = monthIncome.reduce((a, b) => a + b, 0)
+
+  if (totalExpense === 0 && totalIncome === 0) {
+    return <p style={{ color: '#aaa', fontSize: '0.9rem' }}>該年無交易記錄</p>
+  }
+
+  const max = Math.max(...monthExpense, ...monthIncome)
+  const chartH = 120, base = 130
+  return (
+    <div>
+      <svg viewBox="0 0 360 150" style={{ width: '100%' }}>
+        {monthExpense.map((v, i) => {
+          const x0 = 6 + i * 29.5
+          const eh = max > 0 ? (v / max) * chartH : 0
+          const ih = max > 0 ? (monthIncome[i] / max) * chartH : 0
+          return (
+            <g key={i}>
+              {v > 0 && <rect x={x0} y={base - eh} width="11" height={eh} rx="2" fill="#D85A30" />}
+              {monthIncome[i] > 0 && <rect x={x0 + 12} y={base - ih} width="11" height={ih} rx="2" fill="#1D9E75" />}
+              <text x={x0 + 11.5} y="144" textAnchor="middle" fontSize="9" fill="#999">{i + 1}月</text>
+            </g>
+          )
+        })}
+        <line x1="4" y1={base} x2="356" y2={base} stroke="#ddd" strokeWidth="1" />
+      </svg>
+      <div className="pie-totals" style={{ marginTop: '0.25rem' }}>
+        <div className="pie-total-row">
+          <span>年支出</span><span style={{ color: '#D85A30' }}>-${totalExpense.toLocaleString()}</span>
+        </div>
+        <div className="pie-total-row">
+          <span>年收入</span><span style={{ color: '#1D9E75' }}>+${totalIncome.toLocaleString()}</span>
+        </div>
+        <div className="pie-total-row">
+          <span>結餘</span>
+          <span style={{ color: totalIncome - totalExpense >= 0 ? '#1D9E75' : '#D85A30' }}>
+            {totalIncome - totalExpense >= 0 ? '+' : '-'}${Math.abs(totalIncome - totalExpense).toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Budget({ session }) {
   const now = new Date()
   const [selectedMonth, setSelectedMonth] = useState(
@@ -101,6 +153,14 @@ export default function Budget({ session }) {
   const [categories, setCategories] = useState([])
   const [transactions, setTransactions] = useState([])
   const [prevMonthTxns, setPrevMonthTxns] = useState([])
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [templates, setTemplates] = useState([])
+  const [recurrings, setRecurrings] = useState([])
+  const [showRecurringManager, setShowRecurringManager] = useState(false)
+  const [newRecurringForm, setNewRecurringForm] = useState({ account_id: '', category_id: '', amount: '', type: 'expense', note: '', day_of_month: '' })
+  const [showYearStats, setShowYearStats] = useState(false)
+  const [statsYear, setStatsYear] = useState(now.getFullYear())
+  const [yearTxns, setYearTxns] = useState([])
 
   const [form, setForm] = useState({
     account_id: '', category_id: '', amount: '', type: 'expense',
@@ -127,9 +187,9 @@ export default function Budget({ session }) {
   const [householdBudgetInput, setHouseholdBudgetInput] = useState('')
 
   const [showAccountManager, setShowAccountManager] = useState(false)
-  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', billing_day: '', is_shared: false })
+  const [newAccountForm, setNewAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', billing_day: '', payment_due_day: '', is_shared: false })
   const [editAccountId, setEditAccountId] = useState(null)
-  const [editAccountForm, setEditAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', billing_day: '', is_shared: false })
+  const [editAccountForm, setEditAccountForm] = useState({ name: '', balance: '', color: COLORS[0], account_type: 'general', billing_day: '', payment_due_day: '', is_shared: false })
 
   const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [newCategoryForm, setNewCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
@@ -150,9 +210,10 @@ export default function Budget({ session }) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  useEffect(() => { fetchAccountsAndCategories(); fetchHousehold(); fetchInstallments() }, [])
+  useEffect(() => { fetchAccountsAndCategories(); fetchHousehold(); fetchInstallments(); fetchTemplates(); fetchRecurrings() }, [])
   useEffect(() => { fetchTransactions(); fetchBudgets() }, [selectedMonth])
   useEffect(() => { if (showDataManager) fetchDataTransactions(dataMonth) }, [dataMonth, showDataManager])
+  useEffect(() => { if (showYearStats) fetchYearStats() }, [statsYear, showYearStats])
 
   async function fetchHousehold() {
     const { data } = await supabase
@@ -458,11 +519,12 @@ export default function Budget({ session }) {
       color: newAccountForm.color,
       account_type: newAccountForm.account_type,
       billing_day: newAccountForm.account_type === 'credit' && newAccountForm.billing_day ? parseInt(newAccountForm.billing_day) : null,
+      payment_due_day: newAccountForm.account_type === 'credit' && newAccountForm.payment_due_day ? parseInt(newAccountForm.payment_due_day) : null,
       user_id: newAccountForm.is_shared ? null : session.user.id,
       household_id: newAccountForm.is_shared ? household?.id : null,
     }])
     if (error) { setMessage(error.message); return }
-    setNewAccountForm({ name: '', balance: '', color: COLORS[0], account_type: 'general', is_shared: false })
+    setNewAccountForm({ name: '', balance: '', color: COLORS[0], account_type: 'general', billing_day: '', payment_due_day: '', is_shared: false })
     fetchAccountsAndCategories()
   }
 
@@ -473,6 +535,7 @@ export default function Budget({ session }) {
       color: editAccountForm.color,
       account_type: editAccountForm.account_type,
       billing_day: editAccountForm.account_type === 'credit' && editAccountForm.billing_day ? parseInt(editAccountForm.billing_day) : null,
+      payment_due_day: editAccountForm.account_type === 'credit' && editAccountForm.payment_due_day ? parseInt(editAccountForm.payment_due_day) : null,
       user_id: editAccountForm.is_shared ? null : session.user.id,
       household_id: editAccountForm.is_shared ? household?.id : null,
     }).eq('id', editAccountId)
@@ -490,7 +553,7 @@ export default function Budget({ session }) {
 
   function startEditAccount(account) {
     setEditAccountId(account.id)
-    setEditAccountForm({ name: account.name, balance: String(account.balance), color: account.color, account_type: account.account_type || 'general', billing_day: account.billing_day ? String(account.billing_day) : '', is_shared: !!account.household_id })
+    setEditAccountForm({ name: account.name, balance: String(account.balance), color: account.color, account_type: account.account_type || 'general', billing_day: account.billing_day ? String(account.billing_day) : '', payment_due_day: account.payment_due_day ? String(account.payment_due_day) : '', is_shared: !!account.household_id })
   }
 
   function calcStartMonth(txnDate, billingDay) {
@@ -660,10 +723,7 @@ export default function Budget({ session }) {
   }
 
   function exportCSV() {
-    const filtered = transactions.filter(t =>
-      (!filterCategory || t.category_id === filterCategory) &&
-      (!filterAccount || t.account_id === filterAccount)
-    )
+    const filtered = filteredTransactions
     const headers = ['日期', '類型', '帳戶', '分類', '金額', '備註']
     const rows = filtered.map(t => [
       t.txn_date, t.type === 'expense' ? '支出' : '收入',
@@ -677,6 +737,275 @@ export default function Budget({ session }) {
     a.download = `記帳_${selectedMonth}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // 依各帳戶的支出/收入合計調整餘額（信用卡方向相反：支出加待繳、收入減待繳）
+  async function applyBalanceDeltas(deltas) {
+    for (const [accountId, t] of Object.entries(deltas)) {
+      const { data: acc } = await supabase.from('accounts').select('balance, account_type').eq('id', accountId).single()
+      if (!acc) continue
+      const net = (t.income || 0) - (t.expense || 0)
+      const delta = acc.account_type === 'credit' ? -net : net
+      if (delta !== 0) await supabase.from('accounts').update({ balance: parseFloat(acc.balance) + delta }).eq('id', accountId)
+    }
+  }
+
+  // ===== 快速記帳範本 =====
+  async function fetchTemplates() {
+    const { data } = await supabase.from('templates').select('*').order('created_at', { ascending: true })
+    setTemplates(data || [])
+  }
+
+  async function handleSaveTemplate() {
+    if (!form.account_id || !form.category_id || !form.amount) {
+      setMessage('請先填好帳戶、分類、金額再存成範本'); return
+    }
+    const defaultName = form.note || categories.find(c => c.id === form.category_id)?.name || ''
+    const name = prompt('範本名稱：', defaultName)
+    if (!name) return
+    const { error } = await supabase.from('templates').insert([{
+      user_id: session.user.id, name,
+      account_id: form.account_id, category_id: form.category_id,
+      amount: parseFloat(form.amount), type: form.type, note: form.note || '',
+    }])
+    if (error) { setMessage(error.message); return }
+    setMessage('範本儲存成功！')
+    fetchTemplates()
+  }
+
+  function applyTemplate(tp) {
+    setForm({
+      account_id: tp.account_id, category_id: tp.category_id,
+      amount: String(tp.amount), type: tp.type, note: tp.note || '',
+      txn_date: new Date().toISOString().split('T')[0],
+    })
+    setEditId(null)
+    setShowTransfer(false)
+  }
+
+  async function handleDeleteTemplate(id, e) {
+    e.stopPropagation()
+    if (!confirm('刪除此範本？')) return
+    await supabase.from('templates').delete().eq('id', id)
+    fetchTemplates()
+  }
+
+  // ===== 週期性消費 =====
+  async function fetchRecurrings() {
+    const { data } = await supabase.from('recurrings').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
+    const recs = data || []
+    const added = await autoAddRecurringTxns(recs)
+    if (added) {
+      const { data: refreshed } = await supabase.from('recurrings').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
+      setRecurrings(refreshed || [])
+      fetchAccountsAndCategories()
+      fetchTransactions()
+    } else {
+      setRecurrings(recs)
+    }
+  }
+
+  // 從 last_added_month 之後逐月補建交易；本月日子未到先跳過，等日子到了下次開 App 再建
+  async function autoAddRecurringTxns(recs) {
+    const today = new Date()
+    const cy = today.getFullYear(), cm = today.getMonth() + 1, cd = today.getDate()
+    const balanceDeltas = {}
+    let added = false
+    for (const rec of recs) {
+      if (!rec.last_added_month) continue
+      let [y, m] = rec.last_added_month.split('-').map(Number)
+      m++; if (m > 12) { m = 1; y++ }
+      const dates = []
+      while (y < cy || (y === cy && m <= cm)) {
+        const lastDay = new Date(y, m, 0).getDate()
+        const d = Math.min(rec.day_of_month, lastDay)
+        if (y === cy && m === cm && d > cd) break
+        dates.push(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
+        m++; if (m > 12) { m = 1; y++ }
+      }
+      if (dates.length === 0) continue
+      const rows = dates.map(txn_date => ({
+        user_id: session.user.id, account_id: rec.account_id, category_id: rec.category_id,
+        amount: rec.amount, type: rec.type, note: rec.note || '週期性消費', txn_date,
+      }))
+      const { error } = await supabase.from('transactions').insert(rows)
+      if (error) continue
+      await supabase.from('recurrings').update({ last_added_month: dates[dates.length - 1].slice(0, 7) }).eq('id', rec.id)
+      const t = balanceDeltas[rec.account_id] = balanceDeltas[rec.account_id] || { expense: 0, income: 0 }
+      t[rec.type] += parseFloat(rec.amount) * dates.length
+      added = true
+    }
+    await applyBalanceDeltas(balanceDeltas)
+    return added
+  }
+
+  async function handleCreateRecurring() {
+    const { account_id, category_id, amount, day_of_month } = newRecurringForm
+    if (!account_id || !category_id || !amount || !day_of_month) {
+      setMessage('請填寫帳戶、分類、金額、每月幾號'); return
+    }
+    const nowD = new Date()
+    const curY = nowD.getFullYear(), curM = nowD.getMonth() + 1
+    const prevM = curM === 1 ? 12 : curM - 1
+    const prevY = curM === 1 ? curY - 1 : curY
+    const { error } = await supabase.from('recurrings').insert([{
+      user_id: session.user.id,
+      account_id, category_id,
+      amount: parseFloat(amount),
+      type: newRecurringForm.type,
+      note: newRecurringForm.note || '',
+      day_of_month: parseInt(day_of_month),
+      last_added_month: `${prevY}-${String(prevM).padStart(2, '0')}`,
+    }])
+    if (error) { setMessage(error.message); return }
+    setMessage('週期性消費新增成功！本月日子已到會立即補記一筆')
+    setNewRecurringForm({ account_id: '', category_id: '', amount: '', type: 'expense', note: '', day_of_month: '' })
+    fetchRecurrings()
+  }
+
+  async function handleDeleteRecurring(id) {
+    if (!confirm('確定刪除此週期性消費？（已建立的交易不會刪除）')) return
+    const { error } = await supabase.from('recurrings').delete().eq('id', id)
+    if (error) { setMessage(error.message); return }
+    fetchRecurrings()
+  }
+
+  // ===== 年度統計 =====
+  async function fetchYearStats() {
+    const { data } = await supabase.from('transactions').select('amount, type, txn_date')
+      .gte('txn_date', `${statsYear}-01-01`).lte('txn_date', `${statsYear}-12-31`)
+    setYearTxns(data || [])
+  }
+
+  // ===== 匯入 CSV（對應匯出格式：日期,類型,帳戶,分類,金額,備註）=====
+  function parseCSVLine(line) {
+    const s = line.trim()
+    if (s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1).split('","')
+    return s.split(',')
+  }
+
+  async function handleImportCSV(e) {
+    const file = e.target.files[0]
+    e.target.value = ''
+    if (!file) return
+    let text = await file.text()
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1) // 去掉 BOM
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    const rows = []
+    let skipped = 0
+    for (const line of lines.slice(1)) {
+      const [date, typeStr, accName, catName, amountStr, note] = parseCSVLine(line)
+      const acc = accounts.find(a => a.name === accName)
+      const cat = categories.find(c => c.name === catName)
+      const amount = parseFloat(amountStr)
+      if (!acc || !cat || !amount || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { skipped++; continue }
+      rows.push({
+        user_id: session.user.id, account_id: acc.id, category_id: cat.id,
+        amount, type: typeStr === '收入' ? 'income' : 'expense', note: note || '', txn_date: date,
+      })
+    }
+    if (rows.length === 0) { setMessage(`沒有可匯入的資料（略過 ${skipped} 筆，請確認帳戶/分類名稱與格式）`); return }
+    if (!confirm(`即將匯入 ${rows.length} 筆交易${skipped ? `（另有 ${skipped} 筆因帳戶/分類不存在或格式錯誤而略過）` : ''}，並同步調整帳戶餘額。繼續？`)) return
+    const { error } = await supabase.from('transactions').insert(rows)
+    if (error) { setMessage(error.message); return }
+    const deltas = {}
+    rows.forEach(r => {
+      const t = deltas[r.account_id] = deltas[r.account_id] || { expense: 0, income: 0 }
+      t[r.type] += r.amount
+    })
+    await applyBalanceDeltas(deltas)
+    setMessage(`匯入成功！共 ${rows.length} 筆`)
+    fetchAll()
+    if (showDataManager) fetchDataTransactions(dataMonth)
+  }
+
+  // ===== 完整備份 / 還原 =====
+  async function exportBackup() {
+    const tables = ['accounts', 'categories', 'transactions', 'budgets', 'installments', 'recurrings', 'templates']
+    const backup = { app: 'my-budget-app', version: 1, exported_at: new Date().toISOString() }
+    for (const t of tables) {
+      const { data } = await supabase.from(t).select('*')
+      backup[t] = data || []
+    }
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `記帳備份_${new Date().toISOString().split('T')[0]}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    setMessage('備份匯出成功！')
+  }
+
+  async function handleImportBackup(e) {
+    const file = e.target.files[0]
+    e.target.value = ''
+    if (!file) return
+    let backup
+    try { backup = JSON.parse(await file.text()) } catch { setMessage('備份檔格式錯誤'); return }
+    if (!Array.isArray(backup.accounts) || !Array.isArray(backup.categories)) { setMessage('備份檔格式錯誤'); return }
+    if (!confirm(`此備份含 ${backup.accounts.length} 個帳戶、${(backup.transactions || []).length} 筆交易。\n匯入會「新增」備份中的資料（不會刪除現有資料，重複匯入會出現兩份）。繼續？`)) return
+
+    const accMap = {}, catMap = {}
+    for (const a of backup.accounts) {
+      const { data } = await supabase.from('accounts').insert([{
+        name: a.name, balance: a.balance, color: a.color,
+        account_type: a.account_type || 'general', billing_day: a.billing_day ?? null,
+        ...(a.payment_due_day != null ? { payment_due_day: a.payment_due_day } : {}),
+        user_id: session.user.id, household_id: null,
+      }]).select().single()
+      if (data) accMap[a.id] = data.id
+    }
+    for (const c of backup.categories) {
+      const { data } = await supabase.from('categories').insert([{
+        name: c.name, icon: c.icon || '', type: c.type, user_id: session.user.id,
+      }]).select().single()
+      if (data) catMap[c.id] = data.id
+    }
+    const txRows = (backup.transactions || [])
+      .filter(t => accMap[t.account_id])
+      .map(t => ({
+        user_id: session.user.id, account_id: accMap[t.account_id],
+        category_id: catMap[t.category_id] || null,
+        amount: t.amount, type: t.type, note: t.note || '', txn_date: t.txn_date,
+      }))
+    for (let i = 0; i < txRows.length; i += 500) {
+      await supabase.from('transactions').insert(txRows.slice(i, i + 500))
+    }
+    const budgetRows = (backup.budgets || [])
+      .filter(b => catMap[b.category_id])
+      .map(b => ({ user_id: session.user.id, category_id: catMap[b.category_id], month: b.month, amount: b.amount }))
+    if (budgetRows.length) await supabase.from('budgets').insert(budgetRows)
+    const instRows = (backup.installments || [])
+      .filter(i => accMap[i.account_id])
+      .map(i => ({
+        user_id: session.user.id, account_id: accMap[i.account_id], category_id: catMap[i.category_id] || null,
+        name: i.name, total_amount: i.total_amount, monthly_amount: i.monthly_amount,
+        total_months: i.total_months, start_month: i.start_month, note: i.note || '',
+        last_added_month: i.last_added_month, pending_amount: i.pending_amount || 0,
+      }))
+    if (instRows.length) await supabase.from('installments').insert(instRows)
+    const recRows = (backup.recurrings || [])
+      .filter(r => accMap[r.account_id])
+      .map(r => ({
+        user_id: session.user.id, account_id: accMap[r.account_id], category_id: catMap[r.category_id] || null,
+        amount: r.amount, type: r.type, note: r.note || '', day_of_month: r.day_of_month,
+        last_added_month: r.last_added_month,
+      }))
+    if (recRows.length) await supabase.from('recurrings').insert(recRows)
+    const tpRows = (backup.templates || [])
+      .filter(t => accMap[t.account_id])
+      .map(t => ({
+        user_id: session.user.id, name: t.name, account_id: accMap[t.account_id],
+        category_id: catMap[t.category_id] || null, amount: t.amount, type: t.type, note: t.note || '',
+      }))
+    if (tpRows.length) await supabase.from('templates').insert(tpRows)
+
+    setMessage(`備份匯入成功！${backup.accounts.length} 個帳戶、${txRows.length} 筆交易`)
+    fetchAll()
+    fetchInstallments()
+    fetchRecurrings()
+    fetchTemplates()
   }
 
   const expenseCategories = categories.filter(c => c.type === 'expense')
@@ -727,10 +1056,35 @@ export default function Budget({ session }) {
     return `${prevM}/${billingDay}～${endM}/${endD}`
   }
 
+  const kw = searchKeyword.trim().toLowerCase()
   const filteredTransactions = transactions.filter(t =>
     (!filterCategory || t.category_id === filterCategory) &&
-    (!filterAccount || t.account_id === filterAccount)
+    (!filterAccount || t.account_id === filterAccount) &&
+    (!kw ||
+      (t.note || '').toLowerCase().includes(kw) ||
+      (t.categories?.name || '').toLowerCase().includes(kw) ||
+      (t.accounts?.name || '').toLowerCase().includes(kw))
   )
+
+  // 信用卡繳款提醒：7 天內到期且有待繳金額
+  const todayD = new Date()
+  const dueReminders = creditAccounts
+    .filter(a => a.payment_due_day && parseFloat(a.balance) > 0)
+    .map(a => {
+      const cd = todayD.getDate()
+      const thisLast = new Date(todayD.getFullYear(), todayD.getMonth() + 1, 0).getDate()
+      const dueThis = Math.min(a.payment_due_day, thisLast)
+      let daysLeft
+      if (cd <= dueThis) {
+        daysLeft = dueThis - cd
+      } else {
+        const nextLast = new Date(todayD.getFullYear(), todayD.getMonth() + 2, 0).getDate()
+        daysLeft = (thisLast - cd) + Math.min(a.payment_due_day, nextLast)
+      }
+      return { ...a, daysLeft }
+    })
+    .filter(a => a.daysLeft <= 7)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
 
   const actualByCategory = {}
   transactions.filter(t => t.type === 'expense').forEach(t => {
@@ -763,6 +1117,17 @@ export default function Budget({ session }) {
       )}
 
       {page === 'main' && <>
+        {/* 信用卡繳款提醒 */}
+        {dueReminders.length > 0 && (
+          <div style={{ marginBottom: '0.5rem' }}>
+            {dueReminders.map(a => (
+              <div key={a.id} style={{ padding: '0.5rem 0.75rem', marginBottom: '0.4rem', background: a.daysLeft <= 2 ? '#fdecea' : '#fff8e6', border: `1px solid ${a.daysLeft <= 2 ? '#D85A30' : '#F5A623'}`, borderRadius: '8px', fontSize: '0.85rem', color: a.daysLeft <= 2 ? '#D85A30' : '#a06b00' }}>
+                ⏰ {a.name} 繳款日 {a.payment_due_day} 號（{a.daysLeft === 0 ? '今天截止' : `剩 ${a.daysLeft} 天`}）・待繳 ${parseFloat(a.balance).toLocaleString()}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* 帳戶餘額（一般帳戶） */}
         <h2>帳戶餘額</h2>
       <div className="account-cards">
@@ -951,16 +1316,22 @@ export default function Budget({ session }) {
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'general', billing_day: '' })}
+                    <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'general', billing_day: '', payment_due_day: '' })}
                       style={{ flex: 1, padding: '0.3rem', background: editAccountForm.account_type !== 'credit' ? '#534AB7' : '#eee', color: editAccountForm.account_type !== 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>一般帳戶</button>
                     <button onClick={() => setEditAccountForm({ ...editAccountForm, account_type: 'credit' })}
                       style={{ flex: 1, padding: '0.3rem', background: editAccountForm.account_type === 'credit' ? '#D85A30' : '#eee', color: editAccountForm.account_type === 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>信用卡</button>
                   </div>
                   {editAccountForm.account_type === 'credit' && (
-                    <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
-                      value={editAccountForm.billing_day}
-                      onChange={e => setEditAccountForm({ ...editAccountForm, billing_day: e.target.value })}
-                      style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                    <>
+                      <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
+                        value={editAccountForm.billing_day}
+                        onChange={e => setEditAccountForm({ ...editAccountForm, billing_day: e.target.value })}
+                        style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                      <input type='number' placeholder='繳款截止日（每月幾號，選填，繳款提醒用）' min={1} max={31}
+                        value={editAccountForm.payment_due_day}
+                        onChange={e => setEditAccountForm({ ...editAccountForm, payment_due_day: e.target.value })}
+                        style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                    </>
                   )}
                   {household && (
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
@@ -1008,16 +1379,22 @@ export default function Budget({ session }) {
                 ))}
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'general', billing_day: '' })}
+                <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'general', billing_day: '', payment_due_day: '' })}
                   style={{ flex: 1, padding: '0.3rem', background: newAccountForm.account_type !== 'credit' ? '#534AB7' : '#eee', color: newAccountForm.account_type !== 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>一般帳戶</button>
                 <button onClick={() => setNewAccountForm({ ...newAccountForm, account_type: 'credit' })}
                   style={{ flex: 1, padding: '0.3rem', background: newAccountForm.account_type === 'credit' ? '#D85A30' : '#eee', color: newAccountForm.account_type === 'credit' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>信用卡</button>
               </div>
               {newAccountForm.account_type === 'credit' && (
-                <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
-                  value={newAccountForm.billing_day}
-                  onChange={e => setNewAccountForm({ ...newAccountForm, billing_day: e.target.value })}
-                  style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                <>
+                  <input type='number' placeholder='出帳日（每月幾號，例：15）' min={1} max={31}
+                    value={newAccountForm.billing_day}
+                    onChange={e => setNewAccountForm({ ...newAccountForm, billing_day: e.target.value })}
+                    style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                  <input type='number' placeholder='繳款截止日（每月幾號，選填，繳款提醒用）' min={1} max={31}
+                    value={newAccountForm.payment_due_day}
+                    onChange={e => setNewAccountForm({ ...newAccountForm, payment_due_day: e.target.value })}
+                    style={{ padding: '0.4rem', fontSize: '0.9rem', width: '100%', marginBottom: '0.5rem', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ddd' }} />
+                </>
               )}
               {household ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
@@ -1116,6 +1493,100 @@ export default function Budget({ session }) {
         )}
       </div>
 
+      {/* 週期性消費 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowRecurringManager(!showRecurringManager)}>
+          {showRecurringManager ? '▲ 收起週期性消費' : '▼ 週期性消費'}
+        </button>
+        {showRecurringManager && (
+          <div className="budget-body">
+            {recurrings.length === 0 ? (
+              <p style={{ color: '#aaa', fontSize: '0.9rem' }}>尚無週期性消費。新增後每月指定日期會自動建立交易（例：房租、訂閱費）</p>
+            ) : recurrings.map(r => {
+              const cat = categories.find(c => c.id === r.category_id)
+              const acc = accounts.find(a => a.id === r.account_id)
+              return (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #eee' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>
+                      {cat ? `${cat.icon} ${cat.name}` : '—'}{r.note && <span style={{ color: '#999', fontWeight: 400 }}> · {r.note}</span>}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#aaa' }}>每月 {r.day_of_month} 號 · {acc?.name || '—'}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                    <span style={{ color: r.type === 'expense' ? '#D85A30' : '#1D9E75', fontWeight: 600, fontSize: '0.9rem' }}>
+                      {r.type === 'expense' ? '-' : '+'}{parseFloat(r.amount).toLocaleString()}
+                    </span>
+                    <button onClick={() => handleDeleteRecurring(r.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✕</button>
+                  </div>
+                </div>
+              )
+            })}
+
+            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
+              <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>新增週期性消費</div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <button onClick={() => setNewRecurringForm({ ...newRecurringForm, type: 'expense', category_id: '' })}
+                  style={{ flex: 1, padding: '0.3rem', background: newRecurringForm.type === 'expense' ? '#D85A30' : '#eee', color: newRecurringForm.type === 'expense' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>支出</button>
+                <button onClick={() => setNewRecurringForm({ ...newRecurringForm, type: 'income', category_id: '' })}
+                  style={{ flex: 1, padding: '0.3rem', background: newRecurringForm.type === 'income' ? '#1D9E75' : '#eee', color: newRecurringForm.type === 'income' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>收入</button>
+              </div>
+              <select value={newRecurringForm.account_id}
+                onChange={e => setNewRecurringForm({ ...newRecurringForm, account_id: e.target.value })}
+                style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', marginBottom: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }}>
+                <option value=''>選擇帳戶</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}{a.account_type === 'credit' ? '（卡）' : ''}</option>)}
+              </select>
+              <select value={newRecurringForm.category_id}
+                onChange={e => setNewRecurringForm({ ...newRecurringForm, category_id: e.target.value })}
+                style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', marginBottom: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }}>
+                <option value=''>選擇分類</option>
+                {(newRecurringForm.type === 'expense' ? expenseCategories : incomeCategories).map(c =>
+                  <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                )}
+              </select>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <input type='number' placeholder='金額' value={newRecurringForm.amount}
+                  onChange={e => setNewRecurringForm({ ...newRecurringForm, amount: e.target.value })}
+                  style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', minWidth: 0 }} />
+                <input type='number' placeholder='每月幾號' min={1} max={31} value={newRecurringForm.day_of_month}
+                  onChange={e => setNewRecurringForm({ ...newRecurringForm, day_of_month: e.target.value })}
+                  style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', minWidth: 0 }} />
+              </div>
+              <input type='text' placeholder='備註（例：房租，選填）' value={newRecurringForm.note}
+                onChange={e => setNewRecurringForm({ ...newRecurringForm, note: e.target.value })}
+                style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', marginBottom: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }} />
+              <button onClick={handleCreateRecurring}
+                style={{ width: '100%', padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
+                新增週期性消費
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 年度統計 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowYearStats(!showYearStats)}>
+          {showYearStats ? '▲ 收起年度統計' : '▼ 年度統計'}
+        </button>
+        {showYearStats && (
+          <div className="budget-body">
+            <div className="month-nav">
+              <button className="budget-toggle" style={{ width: 'auto', padding: '0.3rem 0.9rem', fontSize: '1.2rem', color: '#333' }} onClick={() => setStatsYear(statsYear - 1)}>‹</button>
+              <h2>{statsYear} 年</h2>
+              <button className="budget-toggle" style={{ width: 'auto', padding: '0.3rem 0.9rem', fontSize: '1.2rem', color: '#333' }} onClick={() => setStatsYear(statsYear + 1)}>›</button>
+            </div>
+            <div style={{ display: 'flex', gap: '0.9rem', fontSize: '0.78rem', color: '#888', marginBottom: '0.4rem' }}>
+              <span><span style={{ display: 'inline-block', width: '9px', height: '9px', background: '#D85A30', borderRadius: '2px', marginRight: '4px' }} />支出</span>
+              <span><span style={{ display: 'inline-block', width: '9px', height: '9px', background: '#1D9E75', borderRadius: '2px', marginRight: '4px' }} />收入</span>
+            </div>
+            <YearBarChart txns={yearTxns} />
+          </div>
+        )}
+      </div>
+
       {/* 資料管理 */}
       <div className="budget-section">
         <button className="budget-toggle" onClick={() => setShowDataManager(!showDataManager)}>
@@ -1153,6 +1624,21 @@ export default function Budget({ session }) {
                 <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: '#aaa' }}>共 {dataTransactions.length} 筆</div>
               </>
             )}
+            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
+              <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>匯入 / 備份</div>
+              <label style={{ display: 'block', width: '100%', padding: '0.5rem', marginBottom: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', textAlign: 'center', boxSizing: 'border-box' }}>
+                匯入 CSV（同匯出格式）
+                <input type='file' accept='.csv,text/csv' onChange={handleImportCSV} style={{ display: 'none' }} />
+              </label>
+              <button onClick={exportBackup}
+                style={{ width: '100%', padding: '0.5rem', marginBottom: '0.5rem', background: '#1D9E75', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                匯出完整備份（JSON）
+              </button>
+              <label style={{ display: 'block', width: '100%', padding: '0.5rem', background: '#fff', color: '#1D9E75', border: '1px solid #1D9E75', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', textAlign: 'center', boxSizing: 'border-box' }}>
+                還原備份（JSON）
+                <input type='file' accept='.json,application/json' onChange={handleImportBackup} style={{ display: 'none' }} />
+              </label>
+            </div>
             <button onClick={handleClearAllTransactions}
               style={{ marginTop: '1rem', width: '100%', padding: '0.5rem', background: '#fff', color: '#D85A30', border: '1px solid #D85A30', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>
               清除全部交易記錄
@@ -1172,6 +1658,17 @@ export default function Budget({ session }) {
           <h2>{monthLabel}</h2>
           <button className="budget-toggle" style={{ width: 'auto', padding: '0.3rem 0.9rem', fontSize: '1.2rem', color: '#333' }} onClick={() => changeMonth(1)}>›</button>
         </div>
+
+        {/* 信用卡繳款提醒 */}
+        {dueReminders.length > 0 && (
+          <div style={{ marginBottom: '0.5rem' }}>
+            {dueReminders.map(a => (
+              <div key={a.id} style={{ padding: '0.5rem 0.75rem', marginBottom: '0.4rem', background: a.daysLeft <= 2 ? '#fdecea' : '#fff8e6', border: `1px solid ${a.daysLeft <= 2 ? '#D85A30' : '#F5A623'}`, borderRadius: '8px', fontSize: '0.85rem', color: a.daysLeft <= 2 ? '#D85A30' : '#a06b00' }}>
+                ⏰ {a.name} 繳款日 {a.payment_due_day} 號（{a.daysLeft === 0 ? '今天截止' : `剩 ${a.daysLeft} 天`}）・待繳 ${parseFloat(a.balance).toLocaleString()}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 信用卡帳戶卡片 */}
         {creditAccounts.length === 0 ? (
@@ -1326,6 +1823,18 @@ export default function Budget({ session }) {
 
       {!showTransfer ? (
         <>
+          {/* 快速記帳範本 */}
+          {templates.length > 0 && !editId && (
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+              {templates.map(tp => (
+                <span key={tp.id} onClick={() => applyTemplate(tp)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '0.25rem 0.65rem', background: '#f0eeff', border: '1px solid #534AB733', borderRadius: '999px', fontSize: '0.82rem', color: '#534AB7', cursor: 'pointer' }}>
+                  {tp.name} ${parseFloat(tp.amount).toLocaleString()}
+                  <span onClick={e => handleDeleteTemplate(tp.id, e)} style={{ color: '#aaa', fontWeight: 700, padding: '0 2px' }}>×</span>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="type-row">
             <button style={btn(form.type === 'expense', '#D85A30')} onClick={() => setForm({ ...form, type: 'expense' })}>支出</button>
             <button style={btn(form.type === 'income', '#1D9E75')} onClick={() => setForm({ ...form, type: 'income' })}>收入</button>
@@ -1366,6 +1875,12 @@ export default function Budget({ session }) {
                 style={{ flex: 1, padding: '0.75rem', fontSize: '1rem', background: isInstallment ? '#D85A30' : '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
                 {loading ? '處理中...' : editId ? '更新' : isInstallment ? '建立分期' : '新增'}
               </button>
+              {!editId && !isInstallment && (
+                <button onClick={handleSaveTemplate}
+                  style={{ padding: '0.75rem 0.9rem', fontSize: '0.9rem', background: '#f0eeff', color: '#534AB7', border: '1px solid #534AB733', borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  存範本
+                </button>
+              )}
               {editId && (
                 <button onClick={cancelEdit}
                   style={{ padding: '0.75rem 1rem', fontSize: '1rem', background: '#eee', color: '#333', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
@@ -1408,6 +1923,11 @@ export default function Budget({ session }) {
 
       {/* 圓餅圖 */}
       <PieChart transactions={transactions} />
+
+      {/* 搜尋 */}
+      <input type='text' placeholder='🔍 搜尋備註 / 分類 / 帳戶' value={searchKeyword}
+        onChange={e => setSearchKeyword(e.target.value)}
+        style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.75rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '8px', marginBottom: '0.5rem' }} />
 
       {/* 篩選 + 匯出 */}
       <div className="filter-row">

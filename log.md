@@ -258,3 +258,46 @@
 ### Bug 修復：舊資料遷移 balance 不準確
 - 問題：舊資料遷移只用時間推算 `pending_amount = remaining * monthly`，但 balance 是舊程式碼加的 `total_amount`，兩者對不上，「已結清」後 balance 仍有殘值
 - 修法：遷移時查出舊繳款交易算 `paidSum`，將 `total_amount - paidSum` 從 balance 扣除，再由 auto-add 補上本月金額；migration 與 auto-add 同一迴圈執行，不需第二次 fetch
+
+---
+
+## 2026-06-11（Bug 修復：信用卡帳單週期；新功能批次）
+
+### Bug 修復：「本月帳單」未依出帳日切分
+- 問題：`cardStatement` 的單筆部分直接加總日曆月刷卡支出，未套用 `billing_day`；前月出帳日後的消費應屬當月帳單卻被算在前月
+- 修法：`fetchTransactions` 額外抓上個月的刷卡交易（`prevMonthTxns`）；`cardStatement` 改以帳單週期計算：上月出帳日（含）後 + 本月出帳日前，與 `calcStartMonth` 同標準；無出帳日維持日曆月。信用卡卡片標題改顯示週期範圍（例：本月帳單（5/15～6/14））
+
+### Supabase 資料表異動（需執行 supabase-migration-20260611.sql）
+- `accounts` 新增 `payment_due_day integer`（信用卡繳款截止日，繳款提醒用）
+- 新增 `recurrings` 表：id, user_id, account_id, category_id, amount, type, note, day_of_month, last_added_month；RLS 啟用
+- 新增 `templates` 表：id, user_id, name, account_id, category_id, amount, type, note；RLS 啟用
+
+### 新功能：信用卡繳款提醒
+- 帳戶管理的信用卡表單新增「繳款截止日」輸入欄（`payment_due_day`）
+- 帳戶有 `payment_due_day` 且待繳金額 > 0、7 天內到期時，記帳主頁與信用卡頁頂部顯示提醒橫幅；剩 2 天內以紅色顯示，含卡名、繳款日、倒數天數、待繳金額
+
+### 新功能：交易搜尋
+- 主頁月份切換下方新增關鍵字搜尋框，比對備註、分類名、帳戶名
+- 搜尋與現有分類/帳戶篩選組合使用；匯出 CSV 連動（依目前搜尋+篩選結果匯出）
+
+### 新功能：快速記帳範本
+- 記帳表單右下角新增「存範本」按鈕（需先填好帳戶/分類/金額），點後跳出命名視窗
+- 已儲存範本以紫色 chips 顯示在表單上方，點一下帶入帳戶/分類/金額/備註，chips 的 × 刪除範本
+- 範本資料存在 `templates` 表
+
+### 新功能：週期性消費
+- 設定頁新增「週期性消費」管理區塊（帳戶、分類、金額、每月幾號、備註）
+- 每次開 App 執行 `autoAddRecurringTxns`：從 `last_added_month + 1` 起逐月，日子已到（含今天）就補建交易並調整餘額；信用卡帳戶會加到待繳
+- 刪除週期設定不影響已建立的交易
+
+### 新功能：年度統計
+- 設定頁新增「年度統計」區塊，年份左右切換，純 SVG 雙色長條圖（紅=支出、綠=收入）顯示 12 個月趨勢，下方列年支出/收入/結餘
+
+### 新功能：匯入 CSV
+- 資料管理頁新增「匯入 CSV」按鈕，格式同匯出（日期,類型,帳戶,分類,金額,備註）
+- 依帳戶名稱、分類名稱對應現有資料；無法對應的列略過並告知筆數；匯入前確認視窗，匯入後自動調整餘額
+
+### 新功能：完整備份 / 還原
+- 資料管理頁新增「匯出完整備份（JSON）」與「還原備份（JSON）」
+- 備份包含 accounts、categories、transactions、budgets、installments、recurrings、templates 全部 7 張表
+- 還原採「新增」方式（id 重新對應），共同帳戶轉為私人；不覆蓋現有資料
