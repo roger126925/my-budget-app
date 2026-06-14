@@ -119,6 +119,117 @@ src/
 - [x] **本月繳款待繳反增**：改為「已結清」按鈕，一次清掉 pending_amount，type 改為 `'income'`（已修復）
 - [x] **從中間期數開始記帳顯示總額**：auto-add 的 `last_added_month` 初始設為 `currentMonth - 1`（非 `startMonth - 1`），確保只加本月起的期數，之前視為已在現實繳過（已修復）
 
+## 桌面快速記帳
+
+三種從手機/電腦桌面快速記帳的方式，可並用：
+
+### 1. PWA Shortcuts（長按 App 圖示跳快捷）
+- `vite.config.js` manifest 的 `shortcuts`：「記一筆」→ `/?page=main`、「刷卡記帳」→ `/?page=credit`。
+- Android 長按已安裝的 PWA 圖示會跳出快捷選單（iOS 部分版本支援）。
+- 改 manifest 後需 push 部署，並**移除舊 PWA 重新安裝**才生效。
+
+### 2. Deep link（開啟即跳對應頁）
+- `Budget.jsx` 的 `page` state 初始值讀網址 `?page=` 參數（`main`/`credit`/`settings`）。
+- 點任何帶參數的連結/捷徑都會直接開到該記帳畫面，兩平台通用。
+
+### 3. iOS 捷徑直接寫入 Supabase（不開 App）
+
+用 iPhone 內建「捷徑」App 做一個桌面按鈕，點下去輸入金額就直接記一筆進資料庫，不用打開記帳 App。背後是打 `add_transaction` RPC（`supabase-migration-20260614-add-transaction-rpc.sql`），一次同時插交易＋改餘額（一般帳戶 expense 扣 balance；信用卡 expense 加 balance＝待繳增加）。
+
+#### 先搞懂三個名詞（捷徑 App 用語）
+
+- **動作**：捷徑裡的一個積木，照順序由上往下執行。每加一步就是「加入一個動作」。
+- **變數**：像一張便利貼，把某個值（例如登入後拿到的通行證）記住，後面動作可以拿來用。
+- **取得 URL 內容**：捷徑用來「打 API」的動作。點它下方「顯示更多」才會出現「方法 / 標頭 / 請求本文」三個欄位。
+
+#### 前置（各做一次）
+
+1. Supabase Dashboard → SQL Editor → 貼上並執行 `supabase-migration-20260614-add-transaction-rpc.sql`。
+2. 記下兩個固定值（後面一直會用到）：
+   - 網址開頭：`https://oriaxsatoyubbdbslael.supabase.co`
+   - 金鑰（apikey）：`sb_publishable_amc8hUlSD5Gk9Suvz85wGg_so2w5kgP`
+3. 用 Supabase → Table Editor 打開 `accounts` 跟 `categories`，把每筆的 `name` 和對應 `id`（一長串 UUID）抄下來，等等簡單版會用到。
+
+---
+
+#### 簡單版（推薦先做，帳戶/分類寫死，最好懂）
+
+打開「捷徑」App → 右上 ➕ 新增捷徑，照順序加入動作：
+
+**步驟 1：登入拿通行證（Token）**
+- 加入動作「**取得 URL 內容**」→ 點「顯示更多」展開
+  - 方法：選 **POST**
+  - 網址：`https://oriaxsatoyubbdbslael.supabase.co/auth/v1/token?grant_type=password`
+  - 標頭（點「新增標頭」）：鍵填 `apikey`，值填上面那串金鑰
+  - 請求本文：選 **JSON**，加兩個欄位：
+    - `email` = 你的登入信箱
+    - `password` = 你的登入密碼
+- 加入動作「**從輸入取得字典值**」（Get Dictionary Value）
+  - 取得「值」，鍵填 `access_token`
+- 加入動作「**設定變數**」，名稱叫 `Token`，值選上一步的結果
+  - （之後凡是要用通行證的地方，就插入這個 `Token` 變數）
+
+**步驟 2：選帳戶**
+- 加入動作「**從選單中選擇**」（Choose from Menu），提示打「選帳戶」
+  - 為每個帳戶加一個選項，例如：現金、信用卡、銀行
+  - 在「現金」這個分支底下，加入動作「**文字**」貼上現金帳戶的 UUID，再加「**設定變數**」名稱 `AccID` = 這段文字
+  - 其他帳戶分支照做（各自貼自己的 UUID、都設定到同一個變數 `AccID`）
+
+**步驟 3：選分類**
+- 同步驟 2，「從選單中選擇」提示「選分類」，每個分類分支貼各自 UUID → 設定變數 `CatID`
+
+**步驟 4：輸入金額**
+- 加入動作「**要求輸入**」（Ask for Input），輸入類型選「**數字**」，提示打「金額」
+- 加入動作「**設定變數**」名稱 `Amount` = 上一步結果
+
+**步驟 5：送出記帳**
+- 加入動作「**取得 URL 內容**」→「顯示更多」
+  - 方法：**POST**
+  - 網址：`https://oriaxsatoyubbdbslael.supabase.co/rest/v1/rpc/add_transaction`
+  - 標頭加三個：
+    - `apikey` = 金鑰
+    - `Authorization` = 先打 `Bearer ` （Bearer 後面有一個空格），再插入變數 `Token`
+    - `Content-Type` = `application/json`
+  - 請求本文選 **JSON**，加欄位：
+    - `p_account_id` = 變數 `AccID`
+    - `p_category_id` = 變數 `CatID`
+    - `p_amount` = 變數 `Amount`
+    - `p_type` = `expense`
+    - `p_note` = 留空或自己打（可省略）
+    - （`p_txn_date` 不用填，不填就是今天）
+- 加入動作「**顯示通知**」打「已記一筆」確認成功
+
+**步驟 6：放上桌面**
+- 捷徑右上 `⋯` → 「加入主畫面」→ 命名「記一筆」、選圖示。
+- 刷卡專用就把整個捷徑複製一份，步驟 2 的選單只留信用卡帳戶即可（函數會自動套信用卡待繳邏輯）。
+
+> 缺點：之後在 App 新增帳戶或分類，要回來這個捷徑的選單手動補上。若覺得麻煩，改用下面的動態版。
+
+---
+
+#### 進階版（動態，新增帳戶/分類自動出現、免維護）
+
+差別只在步驟 2、3：不寫死，改成每次即時去 API 抓清單。原理是把抓回來的清單做成一張「名字 → UUID 對照表」（捷徑叫**字典**），選的時候顯示名字、回傳 UUID。
+
+把簡單版的步驟 2 換成：
+- 加入動作「**取得 URL 內容**」（GET）
+  - 網址：`https://oriaxsatoyubbdbslael.supabase.co/rest/v1/accounts?select=id,name&order=name`
+  - 標頭：`apikey` = 金鑰、`Authorization` = `Bearer ` + 變數 `Token`
+  - 設定變數 `AccList` = 結果（這是一串帳戶清單）
+- 加入動作「**重複執行每一項**」，項目選 `AccList`（會把清單一筆一筆跑過）。在重複內部：
+  - 「取得字典值」鍵 `name` → 設定變數 `nm`（這筆的名字）
+  - 「取得字典值」鍵 `id` → 設定變數 `uid`（這筆的 UUID）
+  - 「**設定字典值**」：字典選 `AccDict`、鍵 = 變數 `nm`、值 = 變數 `uid`
+    （等於把「名字→UUID」一筆筆塞進對照表 `AccDict`）
+- 重複結束後，加入動作「**從清單中選擇**」，清單選 `AccDict`
+  - → 畫面顯示所有帳戶名字，你點一個，回傳對應 UUID → 設定變數 `AccID`
+
+步驟 3 一模一樣，只是網址換成 `…/rest/v1/categories?select=id,name&order=name`，字典換 `CatDict`，最後得到 `CatID`。步驟 1、4、5、6 跟簡單版完全相同。
+
+> 帳戶很少變、分類常新增的話，可以混搭：帳戶用簡單版（寫死）、分類用動態版。
+
+> ⚠️ 這做法會把你的登入信箱+密碼存在捷徑裡，僅限自己的 iPhone 私用，別分享這個捷徑。
+
 ## 部署
 
 - 平台：Vercel（免費）
