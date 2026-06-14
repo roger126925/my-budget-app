@@ -41,6 +41,7 @@ src/
 | `templates` | id, user_id, name, account_id, category_id, amount, type, note | 快速記帳範本，主頁一鍵帶入 |
 
 > 新表與新欄位的 migration SQL 在 `supabase-migration-20260611.sql`，需在 Supabase Dashboard → SQL Editor 執行一次。
+> 外部 API 記帳用的 `add_transaction` RPC 在 `supabase-migration-20260614-add-transaction-rpc.sql`（iOS 捷徑快速記帳用），同樣需執行一次。
 
 ## 頁面結構
 
@@ -100,6 +101,9 @@ src/
 
 ## 待開發
 
+- [x] **桌面快速記帳（1）PWA Shortcuts**：vite.config.js manifest 加 `shortcuts`（記一筆 → `/?page=main`、刷卡記帳 → `/?page=credit`），Android 長按 App 圖示跳快捷選單（已完成）
+- [x] **桌面快速記帳（2）Deep link**：Budget.jsx `page` state 讀網址 `?page=` 參數，開啟即跳對應頁，兩平台通用（已完成）
+- [x] **桌面快速記帳（3）iOS 捷徑寫入 Supabase**：建 `add_transaction` RPC（`supabase-migration-20260614-add-transaction-rpc.sql`），一次原子操作插交易＋改餘額，餘額邏輯同前端（信用卡 expense 動 balance）；iOS 捷徑流程：password grant 拿 token → 呼叫 RPC。需在 Supabase SQL Editor 執行 migration（SQL 已備妥，待手機端設定捷徑）
 - [ ] 共同帳戶交易標記「誰付的」+ 自動計算每人應付金額
 - [ ] 常用 EMOJI 無法點擊（分類管理頁）
 - [ ] 抑制 Google 翻譯彈出通知

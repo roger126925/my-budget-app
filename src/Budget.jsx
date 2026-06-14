@@ -196,7 +196,10 @@ export default function Budget({ session }) {
   const [editCategoryId, setEditCategoryId] = useState(null)
   const [editCategoryForm, setEditCategoryForm] = useState({ name: '', icon: '', type: 'expense' })
 
-  const [page, setPage] = useState('main')
+  const [page, setPage] = useState(() => {
+    const p = new URLSearchParams(window.location.search).get('page')
+    return ['main', 'credit', 'settings'].includes(p) ? p : 'main'
+  })
   const [refreshing, setRefreshing] = useState(false)
   const pullStartY = useRef(null)
   const [showDataManager, setShowDataManager] = useState(false)

@@ -23,6 +23,22 @@ export default defineConfig({
             purpose: 'any maskable',
           },
         ],
+        shortcuts: [
+          {
+            name: '記一筆',
+            short_name: '記帳',
+            description: '快速開啟記帳表單',
+            url: '/?page=main',
+            icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+          },
+          {
+            name: '刷卡記帳',
+            short_name: '刷卡',
+            description: '快速開啟信用卡記帳',
+            url: '/?page=credit',
+            icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+          },
+        ],
       },
     }),
   ],
