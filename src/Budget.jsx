@@ -158,6 +158,10 @@ export default function Budget({ session }) {
   const [recurrings, setRecurrings] = useState([])
   const [showRecurringManager, setShowRecurringManager] = useState(false)
   const [newRecurringForm, setNewRecurringForm] = useState({ account_id: '', category_id: '', amount: '', type: 'expense', note: '', day_of_month: '' })
+  const [editRecurringId, setEditRecurringId] = useState(null)
+  const [editRecurringForm, setEditRecurringForm] = useState({ account_id: '', category_id: '', amount: '', type: 'expense', note: '', day_of_month: '' })
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false)
+  const [showTemplateManager, setShowTemplateManager] = useState(false)
   const [showYearStats, setShowYearStats] = useState(false)
   const [statsYear, setStatsYear] = useState(now.getFullYear())
   const [yearTxns, setYearTxns] = useState([])
@@ -212,6 +216,8 @@ export default function Budget({ session }) {
   const [installmentMonths, setInstallmentMonths] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [undoTxn, setUndoTxn] = useState(null)
+  const undoTimer = useRef(null)
 
   useEffect(() => { fetchAccountsAndCategories(); fetchHousehold(); fetchInstallments(); fetchTemplates(); fetchRecurrings() }, [])
   useEffect(() => { fetchTransactions(); fetchBudgets() }, [selectedMonth])
@@ -433,7 +439,6 @@ export default function Budget({ session }) {
   }
 
   async function handleDelete(id) {
-    if (!confirm('確定要刪除這筆記錄嗎？')) return
     const txn = transactions.find(t => t.id === id)
     const { error } = await supabase.from('transactions').delete().eq('id', id)
     if (error) { setMessage(error.message); return }
@@ -446,6 +451,27 @@ export default function Budget({ session }) {
         : (txn.type === 'expense' ? parseFloat(account.balance) + parseFloat(txn.amount) : parseFloat(account.balance) - parseFloat(txn.amount))
       await supabase.from('accounts').update({ balance: newBalance }).eq('id', txn.account_id)
     }
+    if (undoTimer.current) clearTimeout(undoTimer.current)
+    setUndoTxn(txn)
+    undoTimer.current = setTimeout(() => setUndoTxn(null), 5000)
+    fetchAll()
+  }
+
+  async function handleUndoDelete() {
+    if (!undoTxn) return
+    clearTimeout(undoTimer.current)
+    const { id, created_at, accounts: _a, categories: _c, ...txnData } = undoTxn
+    const { error } = await supabase.from('transactions').insert([txnData])
+    if (error) { setMessage(error.message); setUndoTxn(null); return }
+    const account = accounts.find(a => a.id === undoTxn.account_id)
+    if (account) {
+      const isCredit = account.account_type === 'credit'
+      const newBalance = isCredit
+        ? (undoTxn.type === 'expense' ? parseFloat(account.balance) + parseFloat(undoTxn.amount) : parseFloat(account.balance) - parseFloat(undoTxn.amount))
+        : (undoTxn.type === 'expense' ? parseFloat(account.balance) - parseFloat(undoTxn.amount) : parseFloat(account.balance) + parseFloat(undoTxn.amount))
+      await supabase.from('accounts').update({ balance: newBalance }).eq('id', undoTxn.account_id)
+    }
+    setUndoTxn(null)
     fetchAll()
   }
 
@@ -870,6 +896,20 @@ export default function Budget({ session }) {
     if (!confirm('確定刪除此週期性消費？（已建立的交易不會刪除）')) return
     const { error } = await supabase.from('recurrings').delete().eq('id', id)
     if (error) { setMessage(error.message); return }
+    fetchRecurrings()
+  }
+
+  function startEditRecurring(r) {
+    setEditRecurringId(r.id)
+    setEditRecurringForm({ account_id: r.account_id, category_id: r.category_id, amount: String(r.amount), type: r.type, note: r.note || '', day_of_month: String(r.day_of_month) })
+  }
+
+  async function handleUpdateRecurring() {
+    const { account_id, category_id, amount, type, note, day_of_month } = editRecurringForm
+    if (!account_id || !category_id || !amount || !day_of_month) { setMessage('請填寫所有必填欄位'); return }
+    const { error } = await supabase.from('recurrings').update({ account_id, category_id, amount: parseFloat(amount), type, note, day_of_month: parseInt(day_of_month) }).eq('id', editRecurringId)
+    if (error) { setMessage(error.message); return }
+    setEditRecurringId(null)
     fetchRecurrings()
   }
 
@@ -1435,13 +1475,19 @@ export default function Budget({ session }) {
                 {categories.filter(c => c.type === type).map(c => (
                   editCategoryId === c.id ? (
                     <div key={c.id} style={{ marginBottom: '0.5rem', padding: '0.75rem', background: '#f0f0f0', borderRadius: '8px' }}>
-                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem' }}>
                         <input type='text' placeholder='圖示（emoji）' value={editCategoryForm.icon}
                           onChange={e => setEditCategoryForm({ ...editCategoryForm, icon: e.target.value })}
                           style={{ width: '64px', padding: '0.4rem', fontSize: '1rem', textAlign: 'center', border: '1px solid #ddd', borderRadius: '4px' }} />
                         <input type='text' placeholder='分類名稱' value={editCategoryForm.name}
                           onChange={e => setEditCategoryForm({ ...editCategoryForm, name: e.target.value })}
                           style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                        {['🍜','🚇','🛒','🎮','💊','🏠','💰','🎁','✈️','📱'].map(e => (
+                          <button key={e} onClick={() => setEditCategoryForm({ ...editCategoryForm, icon: e })}
+                            style={{ background: editCategoryForm.icon === e ? '#e8e5ff' : 'none', border: '1px solid #eee', borderRadius: '6px', cursor: 'pointer', fontSize: '1rem', padding: '0.1rem 0.25rem', lineHeight: 1.4 }}>{e}</button>
+                        ))}
                       </div>
                       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
                         <button onClick={() => setEditCategoryForm({ ...editCategoryForm, type: 'expense' })}
@@ -1486,12 +1532,49 @@ export default function Budget({ session }) {
                   onChange={e => setNewCategoryForm({ ...newCategoryForm, name: e.target.value })}
                   style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px' }} />
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#999', marginBottom: '0.5rem' }}>常用：🍜 🚇 🛒 🎮 💊 🏠 💰 🎁 ✈️ 📱</div>
+              <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', marginBottom: '0.5rem', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.78rem', color: '#999' }}>常用：</span>
+                {['🍜','🚇','🛒','🎮','💊','🏠','💰','🎁','✈️','📱'].map(e => (
+                  <button key={e} onClick={() => setNewCategoryForm({ ...newCategoryForm, icon: e })}
+                    style={{ background: newCategoryForm.icon === e ? '#e8e5ff' : 'none', border: '1px solid #eee', borderRadius: '6px', cursor: 'pointer', fontSize: '1rem', padding: '0.1rem 0.25rem', lineHeight: 1.4 }}>{e}</button>
+                ))}
+              </div>
               <button onClick={handleCreateCategory}
                 style={{ width: '100%', padding: '0.5rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.95rem' }}>
                 新增分類
               </button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* 範本管理 */}
+      <div className="budget-section">
+        <button className="budget-toggle" onClick={() => setShowTemplateManager(!showTemplateManager)}>
+          {showTemplateManager ? '▲ 收起範本管理' : '▼ 範本管理'}
+        </button>
+        {showTemplateManager && (
+          <div className="budget-body">
+            {templates.length === 0 ? (
+              <p style={{ color: '#aaa', fontSize: '0.9rem' }}>尚無範本。在記帳頁填好帳戶、分類、金額後按「存範本」即可新增。</p>
+            ) : templates.map(tp => {
+              const cat = categories.find(c => c.id === tp.category_id)
+              const acc = accounts.find(a => a.id === tp.account_id)
+              return (
+                <div key={tp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #eee' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{tp.name}</div>
+                    <div style={{ fontSize: '0.78rem', color: '#aaa' }}>{acc?.name || '—'} · {cat ? `${cat.icon} ${cat.name}` : '—'}{tp.note ? ` · ${tp.note}` : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                    <span style={{ color: '#534AB7', fontWeight: 600, fontSize: '0.9rem' }}>${parseFloat(tp.amount).toLocaleString()}</span>
+                    <button onClick={e => handleDeleteTemplate(tp.id, e)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✕</button>
+                  </div>
+                </div>
+              )
+            })}
+            <p style={{ color: '#bbb', fontSize: '0.8rem', marginTop: '0.75rem' }}>在記帳頁填好資料後按「存範本」可新增；套用範本請點記帳頁的「套用範本 ▼」按鈕。</p>
           </div>
         )}
       </div>
@@ -1508,7 +1591,40 @@ export default function Budget({ session }) {
             ) : recurrings.map(r => {
               const cat = categories.find(c => c.id === r.category_id)
               const acc = accounts.find(a => a.id === r.account_id)
-              return (
+              return editRecurringId === r.id ? (
+                <div key={r.id} style={{ marginBottom: '0.5rem', padding: '0.75rem', background: '#f0f0f0', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <button onClick={() => setEditRecurringForm({ ...editRecurringForm, type: 'expense', category_id: '' })}
+                      style={{ flex: 1, padding: '0.3rem', background: editRecurringForm.type === 'expense' ? '#D85A30' : '#eee', color: editRecurringForm.type === 'expense' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>支出</button>
+                    <button onClick={() => setEditRecurringForm({ ...editRecurringForm, type: 'income', category_id: '' })}
+                      style={{ flex: 1, padding: '0.3rem', background: editRecurringForm.type === 'income' ? '#1D9E75' : '#eee', color: editRecurringForm.type === 'income' ? '#fff' : '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>收入</button>
+                  </div>
+                  <select value={editRecurringForm.account_id} onChange={e => setEditRecurringForm({ ...editRecurringForm, account_id: e.target.value })}
+                    style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', marginBottom: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }}>
+                    <option value=''>選擇帳戶</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}{a.account_type === 'credit' ? '（卡）' : ''}</option>)}
+                  </select>
+                  <select value={editRecurringForm.category_id} onChange={e => setEditRecurringForm({ ...editRecurringForm, category_id: e.target.value })}
+                    style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', marginBottom: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }}>
+                    <option value=''>選擇分類</option>
+                    {(editRecurringForm.type === 'expense' ? expenseCategories : incomeCategories).map(c =>
+                      <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                    )}
+                  </select>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <input type='number' placeholder='金額' value={editRecurringForm.amount} onChange={e => setEditRecurringForm({ ...editRecurringForm, amount: e.target.value })}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', minWidth: 0 }} />
+                    <input type='number' placeholder='每月幾號' min={1} max={31} value={editRecurringForm.day_of_month} onChange={e => setEditRecurringForm({ ...editRecurringForm, day_of_month: e.target.value })}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '4px', minWidth: 0 }} />
+                  </div>
+                  <input type='text' placeholder='備註（選填）' value={editRecurringForm.note} onChange={e => setEditRecurringForm({ ...editRecurringForm, note: e.target.value })}
+                    style={{ width: '100%', padding: '0.4rem', fontSize: '0.9rem', marginBottom: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }} />
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button onClick={handleUpdateRecurring} style={{ flex: 1, padding: '0.4rem', background: '#534AB7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>儲存</button>
+                    <button onClick={() => setEditRecurringId(null)} style={{ padding: '0.4rem 0.8rem', background: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>取消</button>
+                  </div>
+                </div>
+              ) : (
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #eee' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>
@@ -1520,8 +1636,8 @@ export default function Budget({ session }) {
                     <span style={{ color: r.type === 'expense' ? '#D85A30' : '#1D9E75', fontWeight: 600, fontSize: '0.9rem' }}>
                       {r.type === 'expense' ? '-' : '+'}{parseFloat(r.amount).toLocaleString()}
                     </span>
-                    <button onClick={() => handleDeleteRecurring(r.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✕</button>
+                    <button onClick={() => startEditRecurring(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✎</button>
+                    <button onClick={() => handleDeleteRecurring(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '1rem', padding: '0.2rem 0.3rem' }}>✕</button>
                   </div>
                 </div>
               )
@@ -1826,16 +1942,24 @@ export default function Budget({ session }) {
 
       {!showTransfer ? (
         <>
-          {/* 快速記帳範本 */}
+          {/* 套用範本 */}
           {templates.length > 0 && !editId && (
-            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
-              {templates.map(tp => (
-                <span key={tp.id} onClick={() => applyTemplate(tp)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '0.25rem 0.65rem', background: '#f0eeff', border: '1px solid #534AB733', borderRadius: '999px', fontSize: '0.82rem', color: '#534AB7', cursor: 'pointer' }}>
-                  {tp.name} ${parseFloat(tp.amount).toLocaleString()}
-                  <span onClick={e => handleDeleteTemplate(tp.id, e)} style={{ color: '#aaa', fontWeight: 700, padding: '0 2px' }}>×</span>
-                </span>
-              ))}
+            <div style={{ position: 'relative', marginBottom: '0.6rem' }}>
+              <button onClick={() => setShowTemplateMenu(v => !v)}
+                style={{ padding: '0.35rem 0.85rem', background: '#f0eeff', color: '#534AB7', border: '1px solid #534AB733', borderRadius: '999px', fontSize: '0.88rem', cursor: 'pointer' }}>
+                套用範本 {showTemplateMenu ? '▲' : '▼'}
+              </button>
+              {showTemplateMenu && (
+                <div style={{ position: 'absolute', top: '110%', left: 0, background: '#fff', border: '1px solid #eee', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 150, minWidth: '200px', overflow: 'hidden' }}>
+                  {templates.map(tp => (
+                    <div key={tp.id} onClick={() => { applyTemplate(tp); setShowTemplateMenu(false) }}
+                      style={{ padding: '0.6rem 1rem', cursor: 'pointer', fontSize: '0.9rem', borderBottom: '1px solid #f5f5f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{tp.name}</span>
+                      <span style={{ color: '#534AB7', fontWeight: 600 }}>${parseFloat(tp.amount).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           <div className="type-row">
@@ -1968,6 +2092,13 @@ export default function Budget({ session }) {
         ))
       }
       </>}
+
+      {undoTxn && (
+        <div style={{ position: 'fixed', bottom: '72px', left: '16px', right: '16px', background: '#333', color: '#fff', borderRadius: '10px', padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 200, fontSize: '0.9rem', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
+          <span>已刪除{undoTxn.note ? `「${undoTxn.note}」` : ''}</span>
+          <button onClick={handleUndoDelete} style={{ background: 'none', border: '1px solid #fff', color: '#fff', borderRadius: '6px', padding: '0.3rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>復原</button>
+        </div>
+      )}
 
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: '#fff', borderTop: '1px solid #eee', zIndex: 100 }}>
         <button onClick={() => setPage('main')}
