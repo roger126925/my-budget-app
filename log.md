@@ -332,3 +332,11 @@
   - 主頁：chips 改為「套用範本 ▼」單一按鈕 + 下拉選單（`showTemplateMenu` state），點選後套用並關閉
   - 設定頁：新增「範本管理」收合區塊（在分類管理與週期性消費之間），列出範本詳情（帳戶、分類、金額）並可刪除
   - 新增範本仍在記帳頁「存範本」按鈕
+
+#### 加速登入：同步讀取 localStorage 快取 session
+- 問題：每次開 App 都先閃登入頁，等 `getSession()` 非同步回來才進記帳頁，體驗差
+- 修法：
+  - `App.jsx` 加 `getCachedSession()`，同步讀 `sb-{projectRef}-auth-token` 這個 localStorage key
+  - 檢查 `expires_at > now` 確認 token 未過期才使用快取
+  - `session` / `initializing` state 改用 lazy initializer，第一次 render 即知道登入狀態
+  - 已登入且 token 有效 → 零延遲直接進記帳頁；否則顯示「載入中...」等非同步確認

@@ -21,7 +21,7 @@ npm run dev
 ```
 src/
   main.jsx      # 入口
-  App.jsx       # 登入/登出邏輯、session 管理
+  App.jsx       # 登入/登出邏輯、session 管理；getCachedSession() 同步讀 localStorage 快取避免開 App 閃登入頁
   Budget.jsx    # 主記帳畫面
   supabase.js   # Supabase client 初始化
 ```
