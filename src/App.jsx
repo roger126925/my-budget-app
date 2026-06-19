@@ -2,8 +2,20 @@ import { useState, useEffect } from 'react'
 import Budget from './Budget'
 import supabase from './supabase'
 
+function getCachedSession() {
+  try {
+    const projectRef = new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split('.')[0]
+    const raw = localStorage.getItem(`sb-${projectRef}-auth-token`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed?.expires_at && parsed.expires_at > Date.now() / 1000) return parsed
+  } catch {}
+  return null
+}
+
 export default function App() {
-  const [session, setSession] = useState(null)
+  const [session, setSession] = useState(() => getCachedSession())
+  const [initializing, setInitializing] = useState(() => !getCachedSession())
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,6 +24,7 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
+      setInitializing(false)
     })
     supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
@@ -35,6 +48,10 @@ export default function App() {
 
   async function handleLogout() {
     await supabase.auth.signOut()
+  }
+
+  if (initializing) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontSize: '1.2rem', color: '#888' }}>載入中...</div>
   }
 
   if (session) {
