@@ -183,6 +183,7 @@ export default function Budget({ session }) {
 
   const [filterCategory, setFilterCategory] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
+  const [scopeFilter, setScopeFilter] = useState('all') // all | private | shared
 
   const [household, setHousehold] = useState(null)
   const [showHousehold, setShowHousehold] = useState(false)
@@ -1056,6 +1057,8 @@ export default function Budget({ session }) {
   const creditAccounts = accounts.filter(a => a.account_type === 'credit')
   const generalAccounts = accounts.filter(a => a.account_type !== 'credit')
   const creditAccountIds = new Set(creditAccounts.map(a => a.id))
+  const sharedAccounts = accounts.filter(a => a.household_id)
+  const sharedAccountIds = new Set(sharedAccounts.map(a => a.id))
   const creditExpense = transactions
     .filter(t => creditAccountIds.has(t.account_id) && t.type === 'expense')
     .reduce((sum, t) => sum + parseFloat(t.amount), 0)
@@ -1099,8 +1102,15 @@ export default function Budget({ session }) {
     return `${prevM}/${billingDay}～${endM}/${endD}`
   }
 
+  const matchScope = t =>
+    scopeFilter === 'all' ||
+    (scopeFilter === 'shared' ? sharedAccountIds.has(t.account_id) : !sharedAccountIds.has(t.account_id))
+
+  // 圓餅圖隨「全部/私人/共用」切換鈕連動
+  const scopedTransactions = transactions.filter(matchScope)
+
   const kw = searchKeyword.trim().toLowerCase()
-  const filteredTransactions = transactions.filter(t =>
+  const filteredTransactions = scopedTransactions.filter(t =>
     (!filterCategory || t.category_id === filterCategory) &&
     (!filterAccount || t.account_id === filterAccount) &&
     (!kw ||
@@ -1129,13 +1139,12 @@ export default function Budget({ session }) {
     .filter(a => a.daysLeft <= 7)
     .sort((a, b) => a.daysLeft - b.daysLeft)
 
+  // 個人分類預算只追蹤私人帳戶支出，排除共用帳戶（共用支出由共同帳戶月預算單獨追蹤，避免重複計算）
   const actualByCategory = {}
-  transactions.filter(t => t.type === 'expense').forEach(t => {
+  transactions.filter(t => t.type === 'expense' && !sharedAccountIds.has(t.account_id)).forEach(t => {
     actualByCategory[t.category_id] = (actualByCategory[t.category_id] || 0) + parseFloat(t.amount)
   })
 
-  const sharedAccounts = accounts.filter(a => a.household_id)
-  const sharedAccountIds = new Set(sharedAccounts.map(a => a.id))
   const sharedExpense = transactions
     .filter(t => sharedAccountIds.has(t.account_id) && t.type === 'expense')
     .reduce((sum, t) => sum + parseFloat(t.amount), 0)
@@ -2048,8 +2057,19 @@ export default function Budget({ session }) {
         <button className="budget-toggle" style={{ width: 'auto', padding: '0.3rem 0.9rem', fontSize: '1.2rem', color: '#333' }} onClick={() => changeMonth(1)}>›</button>
       </div>
 
+      {/* 私人 / 共用 切換（僅在有共用帳戶時顯示，連動圓餅圖與交易列表） */}
+      {sharedAccounts.length > 0 && (
+        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
+          {[['all', '全部'], ['private', '私人'], ['shared', '共用']].map(([val, label]) => (
+            <button key={val} onClick={() => setScopeFilter(val)} style={{ ...btn(scopeFilter === val, '#534AB7'), fontSize: '0.85rem' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* 圓餅圖 */}
-      <PieChart transactions={transactions} />
+      <PieChart transactions={scopedTransactions} />
 
       {/* 搜尋 */}
       <input type='text' placeholder='🔍 搜尋備註 / 分類 / 帳戶' value={searchKeyword}
